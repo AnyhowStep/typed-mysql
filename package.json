@@ -1,0 +1,26 @@
+{
+  "name": "typed-mysql",
+  "version": "1.0.0",
+  "description": "Uses schema-decorator to enforce type-correctness",
+  "main": "dist/src/main/index.js",
+  "types": "dist/src/main/index.d.ts",
+  "scripts": {
+    "test": "ts-node ./src/test/test.ts",
+    "build": "(rm -r ./dist || true) && tsc -d"
+  },
+  "author": "anyhowstep",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AnyhowStep/typed-mysql"
+  },
+  "devDependencies": {
+    "typescript": "^2.8.0-dev.20180308"
+  },
+  "dependencies": {
+    "@anyhowstep/type-util": "^1.4.0",
+    "@types/mysql": "^2.15.3",
+    "mysql": "^2.15.0",
+    "schema-decorator": "^1.16.1"
+  }
+}
