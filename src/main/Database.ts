@@ -1,6 +1,7 @@
 import * as mysql from "mysql";
 import {TypeUtil} from "@anyhowstep/type-util";
 import * as sd from "schema-decorator";
+import {PaginationConfiguration, RawPaginationArgs, toPaginationArgs, getPaginationStart} from "./pagination";
 
 export interface DatabaseArgs {
     host      : string;
@@ -69,9 +70,21 @@ export function assertQueryKey (k : string) {
         throw new Error(`Only alphanumeric, and underscores are allowed to be query keys`);
     }
 }
+export interface SelectPaginatedInfo {
+    itemsFound : number,
+    pagesFound : number,
+    page : number,
+    itemsPerPage : number,
+}
+export interface SelectPaginatedResult<T> {
+    info : SelectPaginatedInfo,
+    page : SelectResult<T>
+}
 
 export class Database {
     private connection : mysql.Connection;
+    private paginationConfiguration : PaginationConfiguration = new PaginationConfiguration();
+
     public constructor (args : DatabaseArgs) {
         this.connection = mysql.createConnection({
             host     : args.host,
@@ -507,5 +520,63 @@ export class Database {
                 }
             });
         });
+    }
+
+    public getPaginationConfiguration () {
+        return {
+            ...this.paginationConfiguration
+        };
+    }
+    public setPaginationConfiguration (paginationConfiguration : PaginationConfiguration) {
+        this.paginationConfiguration = sd.toClass(
+            "paginationConfiguration",
+            paginationConfiguration,
+            PaginationConfiguration
+        );
+    }
+
+    public async selectPaginated<T> (
+        ctor: { new (): T; },
+        queryStr : string,
+        queryValues? : QueryValues,
+        rawPaginationArgs? : RawPaginationArgs
+    ) : Promise<SelectPaginatedResult<T>> {
+        const paginationArgs = toPaginationArgs(
+            TypeUtil.Coalesce<RawPaginationArgs>(
+                rawPaginationArgs,
+                {}
+            ),
+            this.paginationConfiguration
+        );
+
+        const page = await this.select(
+            ctor,
+            queryStr
+                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
+                .concat(` LIMIT :start, :count`),
+            {
+                ...queryValues,
+                start : getPaginationStart(paginationArgs),
+                count : paginationArgs.itemsPerPage,
+            }
+        );
+
+        const itemsFound = await this.getNumber(`SELECT FOUND_ROWS()`);
+        const pagesFound = (
+            Math.floor(itemsFound/paginationArgs.itemsPerPage) +
+            (
+                (itemsFound%paginationArgs.itemsPerPage == 0) ?
+                    0 : 1
+            )
+        );
+
+        return {
+            info : {
+                itemsFound : itemsFound,
+                pagesFound : pagesFound,
+                ...paginationArgs
+            },
+            page : page,
+        };
     }
 }

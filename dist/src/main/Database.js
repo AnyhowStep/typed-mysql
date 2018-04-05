@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mysql = require("mysql");
 const type_util_1 = require("@anyhowstep/type-util");
 const sd = require("schema-decorator");
+const pagination_1 = require("./pagination");
 class Id {
     constructor() {
         this.id = 0;
@@ -34,6 +35,7 @@ function assertQueryKey(k) {
 exports.assertQueryKey = assertQueryKey;
 class Database {
     constructor(args) {
+        this.paginationConfiguration = new pagination_1.PaginationConfiguration();
         this.queryFormat = (query, values) => {
             if (values == undefined) {
                 return query;
@@ -461,6 +463,28 @@ class Database {
                     reject(err);
                 }
             });
+        });
+    }
+    getPaginationConfiguration() {
+        return Object.assign({}, this.paginationConfiguration);
+    }
+    setPaginationConfiguration(paginationConfiguration) {
+        this.paginationConfiguration = sd.toClass("paginationConfiguration", paginationConfiguration, pagination_1.PaginationConfiguration);
+    }
+    selectPaginated(ctor, queryStr, queryValues, rawPaginationArgs) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const paginationArgs = pagination_1.toPaginationArgs(type_util_1.TypeUtil.Coalesce(rawPaginationArgs, {}), this.paginationConfiguration);
+            const page = yield this.select(ctor, queryStr
+                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
+                .concat(` LIMIT :start, :count`), Object.assign({}, queryValues, { start: pagination_1.getPaginationStart(paginationArgs), count: paginationArgs.itemsPerPage }));
+            const itemsFound = yield this.getNumber(`SELECT FOUND_ROWS()`);
+            const pagesFound = (Math.floor(itemsFound / paginationArgs.itemsPerPage) +
+                ((itemsFound % paginationArgs.itemsPerPage == 0) ?
+                    0 : 1));
+            return {
+                info: Object.assign({ itemsFound: itemsFound, pagesFound: pagesFound }, paginationArgs),
+                page: page,
+            };
         });
     }
 }

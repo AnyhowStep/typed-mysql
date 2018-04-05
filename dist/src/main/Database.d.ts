@@ -1,5 +1,6 @@
 import * as mysql from "mysql";
 import * as sd from "schema-decorator";
+import { PaginationConfiguration, RawPaginationArgs } from "./pagination";
 export interface DatabaseArgs {
     host: string;
     database: string;
@@ -62,8 +63,19 @@ export declare class Id {
     id: number;
 }
 export declare function assertQueryKey(k: string): void;
+export interface SelectPaginatedInfo {
+    itemsFound: number;
+    pagesFound: number;
+    page: number;
+    itemsPerPage: number;
+}
+export interface SelectPaginatedResult<T> {
+    info: SelectPaginatedInfo;
+    page: SelectResult<T>;
+}
 export declare class Database {
     private connection;
+    private paginationConfiguration;
     constructor(args: DatabaseArgs);
     readonly queryFormat: (query: string, values: any) => string;
     getRawConnection(): mysql.Connection;
@@ -121,4 +133,14 @@ export declare class Database {
     beginTransaction(): Promise<{}>;
     rollback(): Promise<{}>;
     commit(): Promise<{}>;
+    getPaginationConfiguration(): {
+        defaultPage: number;
+        maxItemsPerPage: number;
+        minItemsPerPage: number;
+        defaultItemsPerPage: number;
+    };
+    setPaginationConfiguration(paginationConfiguration: PaginationConfiguration): void;
+    selectPaginated<T>(ctor: {
+        new (): T;
+    }, queryStr: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
 }
