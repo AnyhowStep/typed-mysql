@@ -213,6 +213,9 @@ class Database {
             for (let k in queryValues) {
                 if (queryValues.hasOwnProperty(k)) {
                     assertQueryKey(k);
+                    if (queryValues[k] === undefined) {
+                        continue;
+                    }
                     columnArr.push(k);
                     keyArr.push(`:${k}`);
                 }
