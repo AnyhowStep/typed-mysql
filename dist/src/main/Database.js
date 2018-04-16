@@ -190,6 +190,9 @@ class Database {
         for (let k in queryValues) {
             if (queryValues.hasOwnProperty(k)) {
                 assertQueryKey(k);
+                if (queryValues[k] === undefined) {
+                    continue;
+                }
                 result.push(`${mysql.escapeId(k)} = :${k}`);
             }
         }
@@ -488,6 +491,32 @@ class Database {
                 info: Object.assign({ itemsFound: itemsFound, pagesFound: pagesFound }, paginationArgs),
                 page: page,
             };
+        });
+    }
+    simpleSelectZeroOrOne(ctor, table, queryValues = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.selectZeroOrOne(ctor, `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+            `, queryValues);
+        });
+    }
+    simpleSelectPaginated(ctor, table, orderBy, queryValues = {}, rawPaginationArgs) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.selectPaginated(ctor, `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+                ORDER BY
+                    ${orderBy}
+            `, queryValues, rawPaginationArgs);
         });
     }
 }

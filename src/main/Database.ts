@@ -249,6 +249,9 @@ export class Database {
         for (let k in queryValues) {
             if (queryValues.hasOwnProperty(k)) {
                 assertQueryKey(k);
+                if ((queryValues as any)[k] === undefined) {
+                    continue;
+                }
                 result.push(`${mysql.escapeId(k)} = :${k}`);
             }
         }
@@ -581,5 +584,47 @@ export class Database {
             },
             page : page,
         };
+    }
+
+    public async simpleSelectZeroOrOne<T> (
+        ctor        : {new():T},
+        table       : string,
+        queryValues : QueryValues = {}
+    ) : Promise<SelectZeroOrOneResult<T>> {
+        return this.selectZeroOrOne(
+            ctor,
+            `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+            `,
+            queryValues
+        );
+    }
+    public async simpleSelectPaginated<T> (
+        ctor        : { new (): T; },
+        table       : string,
+        orderBy     : string,
+        queryValues : QueryValues = {},
+        rawPaginationArgs? : RawPaginationArgs
+    ) : Promise<SelectPaginatedResult<T>> {
+        return this.selectPaginated(
+            ctor,
+            `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+                ORDER BY
+                    ${orderBy}
+            `,
+            queryValues,
+            rawPaginationArgs
+        )
     }
 }

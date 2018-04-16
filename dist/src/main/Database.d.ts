@@ -143,4 +143,10 @@ export declare class Database {
     selectPaginated<T>(ctor: {
         new (): T;
     }, queryStr: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
+    simpleSelectZeroOrOne<T>(ctor: {
+        new (): T;
+    }, table: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
+    simpleSelectPaginated<T>(ctor: {
+        new (): T;
+    }, table: string, orderBy: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
 }
