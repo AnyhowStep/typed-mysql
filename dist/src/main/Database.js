@@ -255,7 +255,24 @@ class Database {
             const rowQueryValues = sd.toRaw("update target", row);
             const conditionQueryValues = sd.toRaw("update condition", condition);
             const set = this.queryFormat(Database.ToSet(rowQueryValues), rowQueryValues);
-            const where = this.queryFormat(Database.ToWhereEquals(conditionQueryValues), conditionQueryValues);
+            if (set == "") {
+                return {
+                    fieldCount: 0,
+                    affectedRows: 0,
+                    insertId: 0,
+                    serverStatus: 0,
+                    warningCount: 1,
+                    message: "SET clause is empty; no updates occurred",
+                    protocol41: false,
+                    changedRows: 0,
+                    row: row,
+                    condition: condition,
+                };
+            }
+            let where = this.queryFormat(Database.ToWhereEquals(conditionQueryValues), conditionQueryValues);
+            if (where == "") {
+                where = "TRUE";
+            }
             const queryStr = `
             UPDATE
                 ${mysql.escapeId(table)}
