@@ -214,32 +214,36 @@ class Database {
         }
         return arr.join(",");
     }
-    insert(ctor, table, row) {
-        return __awaiter(this, void 0, void 0, function* () {
-            //Just to be safe
-            row = sd.toClass("insert target", row, ctor);
-            const queryValues = sd.toRaw("insert target", row);
-            const columnArr = [];
-            const keyArr = [];
-            for (let k in queryValues) {
-                if (queryValues.hasOwnProperty(k)) {
-                    assertQueryKey(k);
-                    if (queryValues[k] === undefined) {
-                        continue;
-                    }
-                    columnArr.push(k);
-                    keyArr.push(`:${k}`);
+    static ToInsert(queryValues) {
+        const columnArr = [];
+        const keyArr = [];
+        for (let k in queryValues) {
+            if (queryValues.hasOwnProperty(k)) {
+                assertQueryKey(k);
+                if (queryValues[k] === undefined) {
+                    continue;
                 }
+                columnArr.push(k);
+                keyArr.push(`:${k}`);
             }
+        }
+        return {
+            columns: columnArr.join(","),
+            keys: keyArr.join(","),
+        };
+    }
+    insertAny(table, row) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const names = Database.ToInsert(row);
             const queryStr = `
             INSERT INTO
-                ${mysql.escapeId(table)} (${columnArr.join(",")})
+                ${mysql.escapeId(table)} (${names.columns})
             VALUES (
-                ${keyArr.join(",")}
+                ${names.keys}
             )
         `;
             return new Promise((resolve, reject) => {
-                this.rawQuery(queryStr, queryValues, (err, result) => {
+                this.rawQuery(queryStr, row, (err, result) => {
                     if (err == undefined) {
                         if (result == undefined) {
                             reject(new Error(`Expected a result`));
@@ -255,14 +259,18 @@ class Database {
             });
         });
     }
-    update(ctor, conditionCtor, table, row, condition) {
+    insert(ctor, table, row) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
-            row = sd.toClass("update target", row, ctor);
-            condition = sd.toClass("update condition", condition, conditionCtor);
-            const rowQueryValues = sd.toRaw("update target", row);
-            const conditionQueryValues = sd.toRaw("update condition", condition);
-            const set = this.queryFormat(Database.ToSet(rowQueryValues), rowQueryValues);
+            row = sd.toClass("insert target", row, ctor);
+            //TODO Seems like this line can be deleted...
+            const queryValues = sd.toRaw("insert target", row);
+            return this.insertAny(table, queryValues);
+        });
+    }
+    updateAny(table, row, condition) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const set = this.queryFormat(Database.ToSet(row), row);
             if (set == "") {
                 return {
                     fieldCount: 0,
@@ -277,7 +285,7 @@ class Database {
                     condition: condition,
                 };
             }
-            let where = this.queryFormat(Database.ToWhereEquals(conditionQueryValues), conditionQueryValues);
+            let where = this.queryFormat(Database.ToWhereEquals(condition), condition);
             if (where == "") {
                 where = "TRUE";
             }
@@ -304,6 +312,18 @@ class Database {
                     }
                 });
             });
+        });
+    }
+    update(ctor, conditionCtor, table, row, condition) {
+        return __awaiter(this, void 0, void 0, function* () {
+            //Just to be safe
+            row = sd.toClass("update target", row, ctor);
+            condition = sd.toClass("update condition", condition, conditionCtor);
+            //TODO Seems like this line can be deleted...
+            const rowQueryValues = sd.toRaw("update target", row);
+            //TODO Seems like this line can be deleted...
+            const conditionQueryValues = sd.toRaw("update condition", condition);
+            return this.updateAny(table, rowQueryValues, conditionQueryValues);
         });
     }
     updateByNumberId(ctor, table, row, id) {

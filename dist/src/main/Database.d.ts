@@ -101,9 +101,15 @@ export declare class Database {
     static ToWhereEquals(queryValues: QueryValues): string;
     static ToSet(queryValues: QueryValues): string;
     static ToOrderBy(orderByArr: OrderByItem[]): string;
+    static ToInsert(queryValues: QueryValues): {
+        columns: string;
+        keys: string;
+    };
+    insertAny<T extends QueryValues>(table: string, row: T): Promise<InsertResult<T>>;
     insert<T extends QueryValues>(ctor: {
         new (): T;
     }, table: string, row: T): Promise<InsertResult<T>>;
+    updateAny<T extends QueryValues, ConditionT extends QueryValues>(table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
     update<T extends QueryValues, ConditionT extends QueryValues>(ctor: {
         new (): T;
     }, conditionCtor: {

@@ -274,34 +274,38 @@ export class Database {
         }
         return arr.join(",");
     }
-    public async insert<T extends QueryValues> (ctor : {new():T}, table : string, row : T) : Promise<InsertResult<T>> {
-        //Just to be safe
-        row = sd.toClass("insert target", row, ctor);
-        const queryValues = sd.toRaw("insert target", row);
-
+    public static ToInsert (queryValues : QueryValues) {
         const columnArr : string[] = [];
         const keyArr    : string[] = [];
         for (let k in queryValues) {
             if (queryValues.hasOwnProperty(k)) {
                 assertQueryKey(k);
-                if (queryValues[k] === undefined) {
+                if ((queryValues as any)[k] === undefined) {
                     continue;
                 }
                 columnArr.push(k);
                 keyArr.push(`:${k}`)
             }
         }
+        return {
+            columns : columnArr.join(","),
+            keys : keyArr.join(","),
+        };
+    }
+    public async insertAny<T extends QueryValues> (table : string, row : T) : Promise<InsertResult<T>> {
+        const names = Database.ToInsert(row);
+
         const queryStr = `
             INSERT INTO
-                ${mysql.escapeId(table)} (${columnArr.join(",")})
+                ${mysql.escapeId(table)} (${names.columns})
             VALUES (
-                ${keyArr.join(",")}
+                ${names.keys}
             )
         `;
         return new Promise<InsertResult<T>>((resolve, reject) => {
             this.rawQuery(
                 queryStr,
-                queryValues,
+                row,
                 (err, result? : MysqlInsertResult) => {
                     if (err == undefined) {
                         if (result == undefined) {
@@ -319,21 +323,20 @@ export class Database {
             );
         });
     }
-    public async update<T extends QueryValues, ConditionT extends QueryValues> (
-        ctor : {new():T},
-        conditionCtor : {new():ConditionT},
+    public async insert<T extends QueryValues> (ctor : {new():T}, table : string, row : T) : Promise<InsertResult<T>> {
+        //Just to be safe
+        row = sd.toClass("insert target", row, ctor);
+        //TODO Seems like this line can be deleted...
+        const queryValues = sd.toRaw("insert target", row);
+
+        return this.insertAny(table, queryValues);
+    }
+    public async updateAny<T extends QueryValues, ConditionT extends QueryValues> (
         table : string,
         row : T,
         condition : ConditionT
     ) : Promise<UpdateResult<T, ConditionT>> {
-        //Just to be safe
-        row       = sd.toClass("update target", row, ctor);
-        condition = sd.toClass("update condition", condition, conditionCtor);
-
-        const rowQueryValues       : {} = sd.toRaw("update target", row);
-        const conditionQueryValues : {} = sd.toRaw("update condition", condition);
-
-        const set = this.queryFormat(Database.ToSet(rowQueryValues), rowQueryValues);
+        const set = this.queryFormat(Database.ToSet(row), row);
 
         if (set == "") {
             return {
@@ -350,7 +353,7 @@ export class Database {
             };
         }
 
-        let where = this.queryFormat(Database.ToWhereEquals(conditionQueryValues), conditionQueryValues);
+        let where = this.queryFormat(Database.ToWhereEquals(condition), condition);
 
         if (where == "") {
             where = "TRUE";
@@ -386,6 +389,28 @@ export class Database {
                 }
             );
         });
+    }
+    public async update<T extends QueryValues, ConditionT extends QueryValues> (
+        ctor : {new():T},
+        conditionCtor : {new():ConditionT},
+        table : string,
+        row : T,
+        condition : ConditionT
+    ) : Promise<UpdateResult<T, ConditionT>> {
+        //Just to be safe
+        row       = sd.toClass("update target", row, ctor);
+        condition = sd.toClass("update condition", condition, conditionCtor);
+
+        //TODO Seems like this line can be deleted...
+        const rowQueryValues       : T = sd.toRaw("update target", row);
+        //TODO Seems like this line can be deleted...
+        const conditionQueryValues : ConditionT = sd.toRaw("update condition", condition);
+
+        return this.updateAny<T, ConditionT>(
+            table,
+            rowQueryValues,
+            conditionQueryValues
+        );
     }
     public async updateByNumberId<T extends QueryValues> (ctor : {new():T}, table : string, row : T, id : number) : Promise<InsertResult<T>> {
         return this.update(
