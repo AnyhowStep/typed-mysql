@@ -206,6 +206,14 @@ class Database {
         const arr = Database.ToEqualsArray(queryValues);
         return arr.join(",");
     }
+    static ToOrderBy(orderByArr) {
+        const arr = [];
+        for (let i of orderByArr) {
+            const order = i[1] ? "ASC" : "DESC";
+            arr.push(`${mysql.escapeId(i[0])} ${order}`);
+        }
+        return arr.join(",");
+    }
     insert(ctor, table, row) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
@@ -532,7 +540,7 @@ class Database {
                 WHERE
                     ${Database.ToWhereEquals(queryValues)}
                 ORDER BY
-                    ${orderBy}
+                    ${Database.ToOrderBy(orderBy)}
             `, queryValues, rawPaginationArgs);
         });
     }

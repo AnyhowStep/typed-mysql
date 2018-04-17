@@ -80,6 +80,7 @@ export interface SelectPaginatedResult<T> {
     info : SelectPaginatedInfo,
     page : SelectResult<T>
 }
+export type OrderByItem = [string, boolean];
 
 export class Database {
     private connection : mysql.Connection;
@@ -263,6 +264,14 @@ export class Database {
     }
     public static ToSet (queryValues : QueryValues) {
         const arr = Database.ToEqualsArray(queryValues);
+        return arr.join(",");
+    }
+    public static ToOrderBy (orderByArr : OrderByItem[]) {
+        const arr : string[] = [];
+        for (let i of orderByArr) {
+            const order = i[1] ? "ASC" : "DESC";
+            arr.push(`${mysql.escapeId(i[0])} ${order}`);
+        }
         return arr.join(",");
     }
     public async insert<T extends QueryValues> (ctor : {new():T}, table : string, row : T) : Promise<InsertResult<T>> {
@@ -627,7 +636,7 @@ export class Database {
     public async simpleSelectPaginated<T> (
         ctor        : { new (): T; },
         table       : string,
-        orderBy     : string,
+        orderBy     : OrderByItem[],
         queryValues : QueryValues = {},
         rawPaginationArgs? : RawPaginationArgs
     ) : Promise<SelectPaginatedResult<T>> {
@@ -641,10 +650,10 @@ export class Database {
                 WHERE
                     ${Database.ToWhereEquals(queryValues)}
                 ORDER BY
-                    ${orderBy}
+                    ${Database.ToOrderBy(orderBy)}
             `,
             queryValues,
             rawPaginationArgs
-        )
+        );
     }
 }

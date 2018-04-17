@@ -73,6 +73,7 @@ export interface SelectPaginatedResult<T> {
     info: SelectPaginatedInfo;
     page: SelectResult<T>;
 }
+export declare type OrderByItem = [string, boolean];
 export declare class Database {
     private connection;
     private paginationConfiguration;
@@ -99,6 +100,7 @@ export declare class Database {
     static ToEqualsArray(queryValues: QueryValues): string[];
     static ToWhereEquals(queryValues: QueryValues): string;
     static ToSet(queryValues: QueryValues): string;
+    static ToOrderBy(orderByArr: OrderByItem[]): string;
     insert<T extends QueryValues>(ctor: {
         new (): T;
     }, table: string, row: T): Promise<InsertResult<T>>;
@@ -148,5 +150,5 @@ export declare class Database {
     }, table: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
     simpleSelectPaginated<T>(ctor: {
         new (): T;
-    }, table: string, orderBy: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
+    }, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
 }
