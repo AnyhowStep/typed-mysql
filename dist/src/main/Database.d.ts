@@ -77,6 +77,7 @@ export declare type OrderByItem = [string, boolean];
 export declare class Database {
     private connection;
     private paginationConfiguration;
+    private useUtcOnly;
     constructor(args: DatabaseArgs);
     readonly queryFormat: (query: string, values: any) => string;
     getRawConnection(): mysql.Connection;
@@ -129,7 +130,7 @@ export declare class Database {
     getDate(queryStr: string, queryValues?: QueryValues): Promise<Date>;
     exists(table: string, queryValues: QueryValues): Promise<boolean>;
     now(): Promise<Date>;
-    static Escape(raw: any): string;
+    static Escape(raw: any, toUTCIfDate?: boolean): string;
     static EscapeId(raw: string): string;
     getArrayAny(queryStr: string, queryValues?: QueryValues): Promise<any[]>;
     getArray<T>(assertion: sd.AssertDelegate<T>, queryStr: string, queryValues?: QueryValues): Promise<T[]>;
@@ -157,4 +158,5 @@ export declare class Database {
     simpleSelectPaginated<T>(ctor: {
         new (): T;
     }, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
+    utcOnly(): Promise<void>;
 }

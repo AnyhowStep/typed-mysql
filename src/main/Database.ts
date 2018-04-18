@@ -2,6 +2,7 @@ import * as mysql from "mysql";
 import {TypeUtil} from "@anyhowstep/type-util";
 import * as sd from "schema-decorator";
 import {PaginationConfiguration, RawPaginationArgs, toPaginationArgs, getPaginationStart} from "./pagination";
+import {zeroPad} from "./my-util";
 
 export interface DatabaseArgs {
     host      : string;
@@ -85,6 +86,7 @@ export type OrderByItem = [string, boolean];
 export class Database {
     private connection : mysql.Connection;
     private paginationConfiguration : PaginationConfiguration = new PaginationConfiguration();
+    private useUtcOnly : boolean = false;
 
     public constructor (args : DatabaseArgs) {
         this.connection = mysql.createConnection({
@@ -103,7 +105,7 @@ export class Database {
         }
         const newQuery = query.replace(/\:(\w+)/g, (_substring : string, key : string) => {
             if (values.hasOwnProperty(key)) {
-                return mysql.escape(values[key]);
+                return Database.Escape(values[key], this.useUtcOnly);
             }
             throw new Error(`Expected a value for ${key} in query`);
         });
@@ -505,8 +507,21 @@ export class Database {
         const result = await this.getDate("SELECT NOW()");
         return result;
     }
-    public static Escape (raw : any) {
-        return mysql.escape(raw);
+    public static Escape (raw : any, toUTCIfDate : boolean = false) {
+        if (raw instanceof Date && toUTCIfDate) {
+            const year  = zeroPad(raw.getUTCFullYear(), 4);
+            const month = zeroPad(raw.getUTCMonth()+1, 2);
+            const day   = zeroPad(raw.getUTCDate(), 2);
+
+            const hour   = zeroPad(raw.getUTCHours(), 2);
+            const minute = zeroPad(raw.getUTCMinutes(), 2);
+            const second = zeroPad(raw.getUTCSeconds(), 2);
+            const ms     = zeroPad(raw.getMilliseconds(), 3);
+
+            return mysql.escape(`${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`);
+        } else {
+            return mysql.escape(raw);
+        }
     }
     public static EscapeId (raw : string) {
         return mysql.escapeId(raw);
@@ -680,5 +695,20 @@ export class Database {
             queryValues,
             rawPaginationArgs
         );
+    }
+    public utcOnly () : Promise<void> {
+        return new Promise((resolve) => {
+            this.rawQuery(
+                "SET time_zone = :offset;",
+                {
+                    offset : "+00:00",
+                },
+                () => {
+                    this.connection.config.timezone = "Z";
+                    this.useUtcOnly = true;
+                    resolve();
+                }
+            );
+        });
     }
 }

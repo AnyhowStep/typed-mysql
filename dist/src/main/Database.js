@@ -18,6 +18,7 @@ const mysql = require("mysql");
 const type_util_1 = require("@anyhowstep/type-util");
 const sd = require("schema-decorator");
 const pagination_1 = require("./pagination");
+const my_util_1 = require("./my-util");
 class Id {
     constructor() {
         this.id = 0;
@@ -36,13 +37,14 @@ exports.assertQueryKey = assertQueryKey;
 class Database {
     constructor(args) {
         this.paginationConfiguration = new pagination_1.PaginationConfiguration();
+        this.useUtcOnly = false;
         this.queryFormat = (query, values) => {
             if (values == undefined) {
                 return query;
             }
             const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
                 if (values.hasOwnProperty(key)) {
-                    return mysql.escape(values[key]);
+                    return Database.Escape(values[key], this.useUtcOnly);
                 }
                 throw new Error(`Expected a value for ${key} in query`);
             });
@@ -427,8 +429,20 @@ class Database {
             return result;
         });
     }
-    static Escape(raw) {
-        return mysql.escape(raw);
+    static Escape(raw, toUTCIfDate = false) {
+        if (raw instanceof Date && toUTCIfDate) {
+            const year = my_util_1.zeroPad(raw.getUTCFullYear(), 4);
+            const month = my_util_1.zeroPad(raw.getUTCMonth() + 1, 2);
+            const day = my_util_1.zeroPad(raw.getUTCDate(), 2);
+            const hour = my_util_1.zeroPad(raw.getUTCHours(), 2);
+            const minute = my_util_1.zeroPad(raw.getUTCMinutes(), 2);
+            const second = my_util_1.zeroPad(raw.getUTCSeconds(), 2);
+            const ms = my_util_1.zeroPad(raw.getMilliseconds(), 3);
+            return mysql.escape(`${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`);
+        }
+        else {
+            return mysql.escape(raw);
+        }
     }
     static EscapeId(raw) {
         return mysql.escapeId(raw);
@@ -562,6 +576,17 @@ class Database {
                 ORDER BY
                     ${Database.ToOrderBy(orderBy)}
             `, queryValues, rawPaginationArgs);
+        });
+    }
+    utcOnly() {
+        return new Promise((resolve) => {
+            this.rawQuery("SET time_zone = :offset;", {
+                offset: "+00:00",
+            }, () => {
+                this.connection.config.timezone = "Z";
+                this.useUtcOnly = true;
+                resolve();
+            });
         });
     }
 }
