@@ -3,6 +3,7 @@ import {TypeUtil} from "@anyhowstep/type-util";
 import * as sd from "schema-decorator";
 import {PaginationConfiguration, RawPaginationArgs, toPaginationArgs, getPaginationStart} from "./pagination";
 import {zeroPad} from "./my-util";
+import {UnsafeQuery} from "./UnsafeQuery";
 
 export interface DatabaseArgs {
     host      : string;
@@ -12,7 +13,7 @@ export interface DatabaseArgs {
     password  : string;
     timezone? : string; //Default local
 }
-export type QueryValues = {};//{ [key : string] : string|number|boolean|Date|null|undefined };
+export type QueryValues = {};//{ [key : string] : string|number|boolean|Date|null|undefined|UnsafeQuery };
 export interface SelectResult<T> {
     rows   : T[];
     fields : mysql.FieldInfo[];
@@ -99,10 +100,32 @@ export class Database {
         });
         this.connection.config.queryFormat = this.queryFormat;
     }
+    public static InsertUnsafeQueries (query : string, values : any) : string {
+        if (values == undefined) {
+            return query;
+        }
+        const newQuery = query.replace(/\:(\w+)/g, (substring : string, key : string) => {
+            if (values.hasOwnProperty(key)) {
+                const raw = values[key];
+                if (raw instanceof UnsafeQuery) {
+                    return raw.value;
+                } else {
+                    return substring;
+                }
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        if (newQuery == query) {
+            return newQuery;
+        } else {
+            return Database.InsertUnsafeQueries(newQuery, values);
+        }
+    }
     public readonly queryFormat = (query : string, values : any) : string => {
         if (values == undefined) {
             return query;
         }
+        query = Database.InsertUnsafeQueries(query, values);
         const newQuery = query.replace(/\:(\w+)/g, (_substring : string, key : string) => {
             if (values.hasOwnProperty(key)) {
                 return Database.Escape(values[key], this.useUtcOnly);

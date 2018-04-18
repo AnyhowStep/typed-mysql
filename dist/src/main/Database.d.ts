@@ -79,6 +79,7 @@ export declare class Database {
     private paginationConfiguration;
     private useUtcOnly;
     constructor(args: DatabaseArgs);
+    static InsertUnsafeQueries(query: string, values: any): string;
     readonly queryFormat: (query: string, values: any) => string;
     getRawConnection(): mysql.Connection;
     connect(): Promise<void>;

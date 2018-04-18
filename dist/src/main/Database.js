@@ -19,6 +19,7 @@ const type_util_1 = require("@anyhowstep/type-util");
 const sd = require("schema-decorator");
 const pagination_1 = require("./pagination");
 const my_util_1 = require("./my-util");
+const UnsafeQuery_1 = require("./UnsafeQuery");
 class Id {
     constructor() {
         this.id = 0;
@@ -42,6 +43,7 @@ class Database {
             if (values == undefined) {
                 return query;
             }
+            query = Database.InsertUnsafeQueries(query, values);
             const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
                 if (values.hasOwnProperty(key)) {
                     return Database.Escape(values[key], this.useUtcOnly);
@@ -59,6 +61,29 @@ class Database {
             timezone: type_util_1.TypeUtil.Coalesce(args.timezone, "local"),
         });
         this.connection.config.queryFormat = this.queryFormat;
+    }
+    static InsertUnsafeQueries(query, values) {
+        if (values == undefined) {
+            return query;
+        }
+        const newQuery = query.replace(/\:(\w+)/g, (substring, key) => {
+            if (values.hasOwnProperty(key)) {
+                const raw = values[key];
+                if (raw instanceof UnsafeQuery_1.UnsafeQuery) {
+                    return raw.value;
+                }
+                else {
+                    return substring;
+                }
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        if (newQuery == query) {
+            return newQuery;
+        }
+        else {
+            return Database.InsertUnsafeQueries(newQuery, values);
+        }
     }
     getRawConnection() {
         return this.connection;
