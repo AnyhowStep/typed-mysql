@@ -3,6 +3,7 @@ import * as sd from "schema-decorator";
 
 export const minPage = 0;
 
+@sd.ignoreExtraVariables
 export class PaginationConfiguration {
     @sd.assert(sd.naturalNumber())
     defaultPage         : number = 0;
@@ -13,20 +14,23 @@ export class PaginationConfiguration {
     @sd.assert(sd.naturalNumber())
     defaultItemsPerPage : number = 20;
 }
+
+@sd.ignoreExtraVariables
 export class RawPaginationArgs {
     @sd.assert(sd.maybe(sd.naturalNumber()))
     page? : number|null|undefined;
     @sd.assert(sd.maybe(sd.naturalNumber()))
     itemsPerPage? : number|null|undefined;
 }
+
 export interface PaginationArgs {
     page : number;
     itemsPerPage : number;
 }
 
 export function toPaginationArgs (raw : RawPaginationArgs, configuration : PaginationConfiguration) : PaginationArgs {
-    raw = sd.toClass("raw", raw, RawPaginationArgs);
-    configuration = sd.toClass("configuration", configuration, PaginationConfiguration);
+    raw = sd.toClassExact("raw", raw, RawPaginationArgs);
+    configuration = sd.toClassExact("configuration", configuration, PaginationConfiguration);
 
     let page = TypeUtil.Coalesce<number>(raw.page, configuration.defaultPage);
     if (page < minPage) {

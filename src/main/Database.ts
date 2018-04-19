@@ -350,7 +350,7 @@ export class Database {
     }
     public async insert<T extends QueryValues> (ctor : {new():T}, table : string, row : T) : Promise<InsertResult<T>> {
         //Just to be safe
-        row = sd.toClass("insert target", row, ctor);
+        row = sd.toClassExact("insert target", row, ctor);
         //TODO Seems like this line can be deleted...
         const queryValues = sd.toRaw("insert target", row);
 
@@ -423,8 +423,8 @@ export class Database {
         condition : ConditionT
     ) : Promise<UpdateResult<T, ConditionT>> {
         //Just to be safe
-        row       = sd.toClass("update target", row, ctor);
-        condition = sd.toClass("update condition", condition, conditionCtor);
+        row       = sd.toClassExact("update target", row, ctor);
+        condition = sd.toClassExact("update condition", condition, conditionCtor);
 
         //TODO Seems like this line can be deleted...
         const rowQueryValues       : T = sd.toRaw("update target", row);
@@ -626,7 +626,7 @@ export class Database {
         };
     }
     public setPaginationConfiguration (paginationConfiguration : PaginationConfiguration) {
-        this.paginationConfiguration = sd.toClass(
+        this.paginationConfiguration = sd.toClassExact(
             "paginationConfiguration",
             paginationConfiguration,
             PaginationConfiguration

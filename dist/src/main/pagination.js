@@ -9,14 +9,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const type_util_1 = require("@anyhowstep/type-util");
 const sd = require("schema-decorator");
 exports.minPage = 0;
-class PaginationConfiguration {
+let PaginationConfiguration = class PaginationConfiguration {
     constructor() {
         this.defaultPage = 0;
         this.maxItemsPerPage = 50;
         this.minItemsPerPage = 1;
         this.defaultItemsPerPage = 20;
     }
-}
+};
 __decorate([
     sd.assert(sd.naturalNumber())
 ], PaginationConfiguration.prototype, "defaultPage", void 0);
@@ -29,19 +29,25 @@ __decorate([
 __decorate([
     sd.assert(sd.naturalNumber())
 ], PaginationConfiguration.prototype, "defaultItemsPerPage", void 0);
+PaginationConfiguration = __decorate([
+    sd.ignoreExtraVariables
+], PaginationConfiguration);
 exports.PaginationConfiguration = PaginationConfiguration;
-class RawPaginationArgs {
-}
+let RawPaginationArgs = class RawPaginationArgs {
+};
 __decorate([
     sd.assert(sd.maybe(sd.naturalNumber()))
 ], RawPaginationArgs.prototype, "page", void 0);
 __decorate([
     sd.assert(sd.maybe(sd.naturalNumber()))
 ], RawPaginationArgs.prototype, "itemsPerPage", void 0);
+RawPaginationArgs = __decorate([
+    sd.ignoreExtraVariables
+], RawPaginationArgs);
 exports.RawPaginationArgs = RawPaginationArgs;
 function toPaginationArgs(raw, configuration) {
-    raw = sd.toClass("raw", raw, RawPaginationArgs);
-    configuration = sd.toClass("configuration", configuration, PaginationConfiguration);
+    raw = sd.toClassExact("raw", raw, RawPaginationArgs);
+    configuration = sd.toClassExact("configuration", configuration, PaginationConfiguration);
     let page = type_util_1.TypeUtil.Coalesce(raw.page, configuration.defaultPage);
     if (page < exports.minPage) {
         page = exports.minPage;

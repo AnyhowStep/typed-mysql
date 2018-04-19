@@ -289,7 +289,7 @@ class Database {
     insert(ctor, table, row) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
-            row = sd.toClass("insert target", row, ctor);
+            row = sd.toClassExact("insert target", row, ctor);
             //TODO Seems like this line can be deleted...
             const queryValues = sd.toRaw("insert target", row);
             return this.insertAny(table, queryValues);
@@ -344,8 +344,8 @@ class Database {
     update(ctor, conditionCtor, table, row, condition) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
-            row = sd.toClass("update target", row, ctor);
-            condition = sd.toClass("update condition", condition, conditionCtor);
+            row = sd.toClassExact("update target", row, ctor);
+            condition = sd.toClassExact("update condition", condition, conditionCtor);
             //TODO Seems like this line can be deleted...
             const rowQueryValues = sd.toRaw("update target", row);
             //TODO Seems like this line can be deleted...
@@ -559,7 +559,7 @@ class Database {
         return Object.assign({}, this.paginationConfiguration);
     }
     setPaginationConfiguration(paginationConfiguration) {
-        this.paginationConfiguration = sd.toClass("paginationConfiguration", paginationConfiguration, pagination_1.PaginationConfiguration);
+        this.paginationConfiguration = sd.toClassExact("paginationConfiguration", paginationConfiguration, pagination_1.PaginationConfiguration);
     }
     selectPaginated(ctor, queryStr, queryValues, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
