@@ -589,6 +589,18 @@ class Database {
             `, queryValues);
         });
     }
+    simpleSelectOne(ctor, table, queryValues = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.selectOne(ctor, `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+            `, queryValues);
+        });
+    }
     simpleSelectPaginated(ctor, table, orderBy, queryValues = {}, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
             return this.selectPaginated(ctor, `

@@ -696,6 +696,24 @@ export class Database {
             queryValues
         );
     }
+    public async simpleSelectOne<T> (
+        ctor        : {new():T},
+        table       : string,
+        queryValues : QueryValues = {}
+    ) : Promise<SelectOneResult<T>> {
+        return this.selectOne(
+            ctor,
+            `
+                SELECT
+                    *
+                FROM
+                    ${mysql.escapeId(table)}
+                WHERE
+                    ${Database.ToWhereEquals(queryValues)}
+            `,
+            queryValues
+        );
+    }
     public async simpleSelectPaginated<T> (
         ctor        : { new (): T; },
         table       : string,

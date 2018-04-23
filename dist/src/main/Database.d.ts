@@ -156,6 +156,9 @@ export declare class Database {
     simpleSelectZeroOrOne<T>(ctor: {
         new (): T;
     }, table: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
+    simpleSelectOne<T>(ctor: {
+        new (): T;
+    }, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     simpleSelectPaginated<T>(ctor: {
         new (): T;
     }, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
