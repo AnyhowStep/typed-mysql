@@ -250,7 +250,7 @@ class Database {
                 if (queryValues[k] === undefined) {
                     continue;
                 }
-                columnArr.push(k);
+                columnArr.push(mysql.escapeId(k));
                 keyArr.push(`:${k}`);
             }
         }

@@ -308,7 +308,7 @@ export class Database {
                 if ((queryValues as any)[k] === undefined) {
                     continue;
                 }
-                columnArr.push(k);
+                columnArr.push(mysql.escapeId(k));
                 keyArr.push(`:${k}`)
             }
         }
