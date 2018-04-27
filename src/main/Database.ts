@@ -366,7 +366,7 @@ export class Database {
         if (set == "") {
             return {
                 fieldCount   : 0,
-                affectedRows : 0,
+                affectedRows : -1, //-1 because we don't know
                 insertId     : 0,
                 serverStatus : 0,
                 warningCount : 1,

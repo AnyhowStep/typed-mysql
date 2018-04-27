@@ -301,7 +301,7 @@ class Database {
             if (set == "") {
                 return {
                     fieldCount: 0,
-                    affectedRows: 0,
+                    affectedRows: -1,
                     insertId: 0,
                     serverStatus: 0,
                     warningCount: 1,
