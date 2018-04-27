@@ -603,13 +603,17 @@ class Database {
     }
     simpleSelectPaginated(ctor, table, orderBy, queryValues = {}, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
+            let where = Database.ToWhereEquals(queryValues);
+            if (where == "") {
+                where = "TRUE";
+            }
             return this.selectPaginated(ctor, `
                 SELECT
                     *
                 FROM
                     ${mysql.escapeId(table)}
                 WHERE
-                    ${Database.ToWhereEquals(queryValues)}
+                    ${where}
                 ORDER BY
                     ${Database.ToOrderBy(orderBy)}
             `, queryValues, rawPaginationArgs);

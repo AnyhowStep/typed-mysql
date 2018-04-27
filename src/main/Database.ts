@@ -721,6 +721,11 @@ export class Database {
         queryValues : QueryValues = {},
         rawPaginationArgs? : RawPaginationArgs
     ) : Promise<SelectPaginatedResult<T>> {
+        let where = Database.ToWhereEquals(queryValues);
+
+        if (where == "") {
+            where = "TRUE";
+        }
         return this.selectPaginated(
             ctor,
             `
@@ -729,7 +734,7 @@ export class Database {
                 FROM
                     ${mysql.escapeId(table)}
                 WHERE
-                    ${Database.ToWhereEquals(queryValues)}
+                    ${where}
                 ORDER BY
                     ${Database.ToOrderBy(orderBy)}
             `,
