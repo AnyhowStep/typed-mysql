@@ -134,10 +134,10 @@ class Database {
             });
         });
     }
-    select(ctor, queryStr, queryValues) {
+    select(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
             const anyResult = yield this.selectAny(queryStr, queryValues);
-            const assertion = sd.array(sd.nested(ctor));
+            const assertion = sd.array(sd.toAssertDelegateExact(assert));
             const assertedRows = assertion("results", anyResult.rows);
             return {
                 rows: assertedRows,
@@ -145,9 +145,9 @@ class Database {
             };
         });
     }
-    selectAll(ctor, table) {
+    selectAll(assert, table) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.select(ctor, `
+            return this.select(assert, `
             SELECT
                 *
             FROM
@@ -167,10 +167,10 @@ class Database {
             };
         });
     }
-    selectOne(ctor, queryStr, queryValues) {
+    selectOne(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
             const anyResult = yield this.selectOneAny(queryStr, queryValues);
-            const assertion = sd.nested(ctor);
+            const assertion = sd.toAssertDelegateExact(assert);
             const assertedRow = assertion("result", anyResult.row);
             return {
                 row: assertedRow,
@@ -198,13 +198,13 @@ class Database {
             }
         });
     }
-    selectZeroOrOne(ctor, queryStr, queryValues) {
+    selectZeroOrOne(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
             const anyResult = yield this.selectZeroOrOneAny(queryStr, queryValues);
             if (anyResult.row == undefined) {
                 return anyResult;
             }
-            const assertion = sd.nested(ctor);
+            const assertion = sd.toAssertDelegateExact(assert);
             const assertedRow = assertion("result", anyResult.row);
             return {
                 row: assertedRow,
@@ -286,13 +286,13 @@ class Database {
             });
         });
     }
-    insert(ctor, table, row) {
+    insert(assert, table, row) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
-            row = sd.toClassExact("insert target", row, ctor);
+            row = sd.toAssertDelegateExact(assert)("insert target", row);
             //TODO Seems like this line can be deleted...
-            const queryValues = sd.toRaw("insert target", row);
-            return this.insertAny(table, queryValues);
+            //const queryValues = sd.toRaw("insert target", row);
+            return this.insertAny(table, row);
         });
     }
     updateAny(table, row, condition) {
@@ -341,21 +341,17 @@ class Database {
             });
         });
     }
-    update(ctor, conditionCtor, table, row, condition) {
+    update(assertRow, assertCondition, table, row, condition) {
         return __awaiter(this, void 0, void 0, function* () {
             //Just to be safe
-            row = sd.toClassExact("update target", row, ctor);
-            condition = sd.toClassExact("update condition", condition, conditionCtor);
-            //TODO Seems like this line can be deleted...
-            const rowQueryValues = sd.toRaw("update target", row);
-            //TODO Seems like this line can be deleted...
-            const conditionQueryValues = sd.toRaw("update condition", condition);
-            return this.updateAny(table, rowQueryValues, conditionQueryValues);
+            row = sd.toAssertDelegateExact(assertRow)("update target", row);
+            condition = sd.toAssertDelegateExact(assertCondition)("update condition", condition);
+            return this.updateAny(table, row, condition);
         });
     }
-    updateByNumberId(ctor, table, row, id) {
+    updateByNumberId(assert, table, row, id) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.update(ctor, Id, table, row, {
+            return this.update(assert, Id, table, row, {
                 id: id,
             });
         });
@@ -561,10 +557,10 @@ class Database {
     setPaginationConfiguration(paginationConfiguration) {
         this.paginationConfiguration = sd.toClassExact("paginationConfiguration", paginationConfiguration, pagination_1.PaginationConfiguration);
     }
-    selectPaginated(ctor, queryStr, queryValues, rawPaginationArgs) {
+    selectPaginated(assert, queryStr, queryValues, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
             const paginationArgs = pagination_1.toPaginationArgs(type_util_1.TypeUtil.Coalesce(rawPaginationArgs, {}), this.paginationConfiguration);
-            const page = yield this.select(ctor, queryStr
+            const page = yield this.select(assert, queryStr
                 .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
                 .concat(` LIMIT :start, :count`), Object.assign({}, queryValues, { start: pagination_1.getPaginationStart(paginationArgs), count: paginationArgs.itemsPerPage }));
             const itemsFound = yield this.getNumber(`SELECT FOUND_ROWS()`);
@@ -577,9 +573,9 @@ class Database {
             };
         });
     }
-    simpleSelectZeroOrOne(ctor, table, queryValues = {}) {
+    simpleSelectZeroOrOne(assert, table, queryValues = {}) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.selectZeroOrOne(ctor, `
+            return this.selectZeroOrOne(assert, `
                 SELECT
                     *
                 FROM
@@ -589,9 +585,9 @@ class Database {
             `, queryValues);
         });
     }
-    simpleSelectOne(ctor, table, queryValues = {}) {
+    simpleSelectOne(assert, table, queryValues = {}) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.selectOne(ctor, `
+            return this.selectOne(assert, `
                 SELECT
                     *
                 FROM
@@ -601,13 +597,13 @@ class Database {
             `, queryValues);
         });
     }
-    simpleSelectPaginated(ctor, table, orderBy, queryValues = {}, rawPaginationArgs) {
+    simpleSelectPaginated(assert, table, orderBy, queryValues = {}, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
             let where = Database.ToWhereEquals(queryValues);
             if (where == "") {
                 where = "TRUE";
             }
-            return this.selectPaginated(ctor, `
+            return this.selectPaginated(assert, `
                 SELECT
                     *
                 FROM

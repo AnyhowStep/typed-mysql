@@ -191,12 +191,12 @@ export class Database {
         });
     }
     public async select<T> (
-        ctor         : {new():T},
+        assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
     ) : Promise<SelectResult<T>> {
         const anyResult    = await this.selectAny(queryStr, queryValues);
-        const assertion    = sd.array(sd.nested(ctor));
+        const assertion    = sd.array(sd.toAssertDelegateExact(assert));
         const assertedRows = assertion("results", anyResult.rows);
         return {
             rows   : assertedRows,
@@ -204,10 +204,10 @@ export class Database {
         };
     }
     public async selectAll<T> (
-        ctor  : {new():T},
-        table : string
+        assert : sd.AssertFunc<T>,
+        table  : string
     ) : Promise<SelectResult<T>> {
-        return this.select(ctor, `
+        return this.select(assert, `
             SELECT
                 *
             FROM
@@ -225,12 +225,12 @@ export class Database {
         };
     }
     public async selectOne<T> (
-        ctor         : {new():T},
+        assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
     ) : Promise<SelectOneResult<T>> {
         const anyResult = await this.selectOneAny(queryStr, queryValues);
-        const assertion   = sd.nested(ctor);
+        const assertion   = sd.toAssertDelegateExact(assert);
         const assertedRow = assertion("result", anyResult.row);
         return {
             row    : assertedRow,
@@ -255,7 +255,7 @@ export class Database {
         }
     }
     public async selectZeroOrOne<T> (
-        ctor         : {new():T},
+        assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
     ) : Promise<SelectZeroOrOneResult<T>> {
@@ -263,7 +263,7 @@ export class Database {
         if (anyResult.row == undefined) {
             return anyResult;
         }
-        const assertion   = sd.nested(ctor);
+        const assertion   = sd.toAssertDelegateExact(assert);
         const assertedRow = assertion("result", anyResult.row);
         return {
             row    : assertedRow,
@@ -348,13 +348,13 @@ export class Database {
             );
         });
     }
-    public async insert<T extends QueryValues> (ctor : {new():T}, table : string, row : T) : Promise<InsertResult<T>> {
+    public async insert<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T) : Promise<InsertResult<T>> {
         //Just to be safe
-        row = sd.toClassExact("insert target", row, ctor);
+        row = sd.toAssertDelegateExact(assert)("insert target", row);
         //TODO Seems like this line can be deleted...
-        const queryValues = sd.toRaw("insert target", row);
+        //const queryValues = sd.toRaw("insert target", row);
 
-        return this.insertAny(table, queryValues);
+        return this.insertAny(table, row);
     }
     public async updateAny<T extends QueryValues, ConditionT extends QueryValues> (
         table : string,
@@ -416,30 +416,25 @@ export class Database {
         });
     }
     public async update<T extends QueryValues, ConditionT extends QueryValues> (
-        ctor : {new():T},
-        conditionCtor : {new():ConditionT},
+        assertRow       : sd.AssertFunc<T>,
+        assertCondition : sd.AssertFunc<ConditionT>,
         table : string,
         row : T,
         condition : ConditionT
     ) : Promise<UpdateResult<T, ConditionT>> {
         //Just to be safe
-        row       = sd.toClassExact("update target", row, ctor);
-        condition = sd.toClassExact("update condition", condition, conditionCtor);
-
-        //TODO Seems like this line can be deleted...
-        const rowQueryValues       : T = sd.toRaw("update target", row);
-        //TODO Seems like this line can be deleted...
-        const conditionQueryValues : ConditionT = sd.toRaw("update condition", condition);
+        row       = sd.toAssertDelegateExact(assertRow)("update target", row);
+        condition = sd.toAssertDelegateExact(assertCondition)("update condition", condition);
 
         return this.updateAny<T, ConditionT>(
             table,
-            rowQueryValues,
-            conditionQueryValues
+            row,
+            condition
         );
     }
-    public async updateByNumberId<T extends QueryValues> (ctor : {new():T}, table : string, row : T, id : number) : Promise<InsertResult<T>> {
+    public async updateByNumberId<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T, id : number) : Promise<InsertResult<T>> {
         return this.update(
-            ctor,
+            assert,
             Id,
             table,
             row,
@@ -634,7 +629,7 @@ export class Database {
     }
 
     public async selectPaginated<T> (
-        ctor: { new (): T; },
+        assert : sd.AssertFunc<T>,
         queryStr : string,
         queryValues? : QueryValues,
         rawPaginationArgs? : RawPaginationArgs
@@ -648,7 +643,7 @@ export class Database {
         );
 
         const page = await this.select(
-            ctor,
+            assert,
             queryStr
                 .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
                 .concat(` LIMIT :start, :count`),
@@ -679,12 +674,12 @@ export class Database {
     }
 
     public async simpleSelectZeroOrOne<T> (
-        ctor        : {new():T},
+        assert      : sd.AssertFunc<T>,
         table       : string,
         queryValues : QueryValues = {}
     ) : Promise<SelectZeroOrOneResult<T>> {
         return this.selectZeroOrOne(
-            ctor,
+            assert,
             `
                 SELECT
                     *
@@ -697,12 +692,12 @@ export class Database {
         );
     }
     public async simpleSelectOne<T> (
-        ctor        : {new():T},
+        assert      : sd.AssertFunc<T>,
         table       : string,
         queryValues : QueryValues = {}
     ) : Promise<SelectOneResult<T>> {
         return this.selectOne(
-            ctor,
+            assert,
             `
                 SELECT
                     *
@@ -715,7 +710,7 @@ export class Database {
         );
     }
     public async simpleSelectPaginated<T> (
-        ctor        : { new (): T; },
+        assert      : sd.AssertFunc<T>,
         table       : string,
         orderBy     : OrderByItem[],
         queryValues : QueryValues = {},
@@ -727,7 +722,7 @@ export class Database {
             where = "TRUE";
         }
         return this.selectPaginated(
-            ctor,
+            assert,
             `
                 SELECT
                     *

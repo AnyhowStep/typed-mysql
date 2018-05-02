@@ -85,20 +85,12 @@ export declare class Database {
     connect(): Promise<void>;
     rawQuery(queryStr: string, queryValues: QueryValues | undefined, callback: (err: mysql.MysqlError | null, results?: any, fields?: mysql.FieldInfo[]) => void): mysql.Query;
     selectAny(queryStr: string, queryValues?: QueryValues): Promise<SelectResult<any>>;
-    select<T>(ctor: {
-        new (): T;
-    }, queryStr: string, queryValues?: QueryValues): Promise<SelectResult<T>>;
-    selectAll<T>(ctor: {
-        new (): T;
-    }, table: string): Promise<SelectResult<T>>;
+    select<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectResult<T>>;
+    selectAll<T>(assert: sd.AssertFunc<T>, table: string): Promise<SelectResult<T>>;
     selectOneAny(queryStr: string, queryValues?: QueryValues): Promise<SelectOneResult<any>>;
-    selectOne<T>(ctor: {
-        new (): T;
-    }, queryStr: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
+    selectOne<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     selectZeroOrOneAny(queryStr: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<any>>;
-    selectZeroOrOne<T>(ctor: {
-        new (): T;
-    }, queryStr: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
+    selectZeroOrOne<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
     static ToEqualsArray(queryValues: QueryValues): string[];
     static ToWhereEquals(queryValues: QueryValues): string;
     static ToSet(queryValues: QueryValues): string;
@@ -108,18 +100,10 @@ export declare class Database {
         keys: string;
     };
     insertAny<T extends QueryValues>(table: string, row: T): Promise<InsertResult<T>>;
-    insert<T extends QueryValues>(ctor: {
-        new (): T;
-    }, table: string, row: T): Promise<InsertResult<T>>;
+    insert<T extends QueryValues>(assert: sd.AssertFunc<T>, table: string, row: T): Promise<InsertResult<T>>;
     updateAny<T extends QueryValues, ConditionT extends QueryValues>(table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
-    update<T extends QueryValues, ConditionT extends QueryValues>(ctor: {
-        new (): T;
-    }, conditionCtor: {
-        new (): ConditionT;
-    }, table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
-    updateByNumberId<T extends QueryValues>(ctor: {
-        new (): T;
-    }, table: string, row: T, id: number): Promise<InsertResult<T>>;
+    update<T extends QueryValues, ConditionT extends QueryValues>(assertRow: sd.AssertFunc<T>, assertCondition: sd.AssertFunc<ConditionT>, table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
+    updateByNumberId<T extends QueryValues>(assert: sd.AssertFunc<T>, table: string, row: T, id: number): Promise<InsertResult<T>>;
     rawDelete(queryStr: string, queryValues?: QueryValues): Promise<MysqlDeleteResult>;
     delete(table: string, queryValues: QueryValues): Promise<MysqlDeleteResult>;
     getAny(queryStr: string, queryValues?: QueryValues): Promise<any>;
@@ -150,17 +134,9 @@ export declare class Database {
         defaultItemsPerPage: number;
     };
     setPaginationConfiguration(paginationConfiguration: PaginationConfiguration): void;
-    selectPaginated<T>(ctor: {
-        new (): T;
-    }, queryStr: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
-    simpleSelectZeroOrOne<T>(ctor: {
-        new (): T;
-    }, table: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
-    simpleSelectOne<T>(ctor: {
-        new (): T;
-    }, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
-    simpleSelectPaginated<T>(ctor: {
-        new (): T;
-    }, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
+    selectPaginated<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
+    simpleSelectZeroOrOne<T>(assert: sd.AssertFunc<T>, table: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
+    simpleSelectOne<T>(assert: sd.AssertFunc<T>, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
+    simpleSelectPaginated<T>(assert: sd.AssertFunc<T>, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
     utcOnly(): Promise<void>;
 }
