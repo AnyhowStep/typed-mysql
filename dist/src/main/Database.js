@@ -387,12 +387,18 @@ class Database {
     }
     getAny(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.selectOneAny(queryStr, queryValues);
+            const result = yield this.selectAny(queryStr, queryValues);
+            if (result.rows.length == 0) {
+                return undefined;
+            }
+            if (result.rows.length != 1) {
+                throw new Error(`Expected 1 row, received ${result.rows.length}`);
+            }
             if (result.fields.length != 1) {
                 throw new Error(`Expected one field, received ${result.fields.length}`);
             }
             const k = result.fields[0].name;
-            const value = result.row[k];
+            const value = result.rows[0][k];
             return value;
         });
     }

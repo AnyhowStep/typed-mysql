@@ -476,15 +476,21 @@ export class Database {
         return this.rawDelete(queryStr, queryValues);
     }
     public async getAny (queryStr : string, queryValues? : QueryValues) {
-        const result = await this.selectOneAny(
+        const result = await this.selectAny(
             queryStr,
             queryValues
         );
+        if (result.rows.length == 0) {
+            return undefined;
+        }
+        if (result.rows.length != 1) {
+            throw new Error(`Expected 1 row, received ${result.rows.length}`);
+        }
         if (result.fields.length != 1) {
             throw new Error(`Expected one field, received ${result.fields.length}`);
         }
         const k = result.fields[0].name;
-        const value = result.row[k];
+        const value = result.rows[0][k];
         return value;
     }
     public async get<T> (assertion : sd.AssertDelegate<T>, queryStr : string, queryValues? : QueryValues) {
