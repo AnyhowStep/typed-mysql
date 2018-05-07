@@ -566,9 +566,20 @@ class Database {
     selectPaginated(assert, queryStr, queryValues, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
             const paginationArgs = pagination_1.toPaginationArgs(type_util_1.TypeUtil.Coalesce(rawPaginationArgs, {}), this.paginationConfiguration);
-            const page = yield this.select(assert, queryStr
-                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
-                .concat(` LIMIT :start, :count`), Object.assign({}, queryValues, { start: pagination_1.getPaginationStart(paginationArgs), count: paginationArgs.itemsPerPage }));
+            if (queryStr.indexOf("SQL_CALC_FOUND_ROWS") < 0) {
+                if (queryStr.indexOf(":__start") >= 0 || queryStr.indexOf(":__count") >= 0) {
+                    throw new Error(`Cannot specify :__start, and :__count, reserved for pagination queries`);
+                }
+                queryStr = queryStr
+                    .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
+                    .concat(` LIMIT :__start, :__count`);
+            }
+            else {
+                if (queryStr.indexOf(":__start") < 0 || queryStr.indexOf(":__count") < 0) {
+                    throw new Error(`You must specify both :__start, and :__count, for pagination queries since SQL_CALC_FOUND_ROWS was specified`);
+                }
+            }
+            const page = yield this.select(assert, queryStr, Object.assign({}, queryValues, { __start: pagination_1.getPaginationStart(paginationArgs), __count: paginationArgs.itemsPerPage }));
             const itemsFound = yield this.getNumber(`SELECT FOUND_ROWS()`);
             const pagesFound = (Math.floor(itemsFound / paginationArgs.itemsPerPage) +
                 ((itemsFound % paginationArgs.itemsPerPage == 0) ?

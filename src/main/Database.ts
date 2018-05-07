@@ -648,15 +648,27 @@ export class Database {
             this.paginationConfiguration
         );
 
+        if (queryStr.indexOf("SQL_CALC_FOUND_ROWS") < 0) {
+            if (queryStr.indexOf(":__start") >= 0 || queryStr.indexOf(":__count") >= 0) {
+                throw new Error(`Cannot specify :__start, and :__count, reserved for pagination queries`);
+            }
+
+            queryStr = queryStr
+                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
+                .concat(` LIMIT :__start, :__count`);
+        } else {
+            if (queryStr.indexOf(":__start") < 0 || queryStr.indexOf(":__count") < 0) {
+                throw new Error(`You must specify both :__start, and :__count, for pagination queries since SQL_CALC_FOUND_ROWS was specified`);
+            }
+        }
+
         const page = await this.select(
             assert,
-            queryStr
-                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
-                .concat(` LIMIT :start, :count`),
+            queryStr,
             {
                 ...queryValues,
-                start : getPaginationStart(paginationArgs),
-                count : paginationArgs.itemsPerPage,
+                __start : getPaginationStart(paginationArgs),
+                __count : paginationArgs.itemsPerPage,
             }
         );
 
