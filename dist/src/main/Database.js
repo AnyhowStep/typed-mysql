@@ -295,6 +295,25 @@ class Database {
             return this.insertAny(table, row);
         });
     }
+    rawUpdate(queryStr, queryValues) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                this.rawQuery(queryStr, queryValues, (err, result) => {
+                    if (err == undefined) {
+                        if (result == undefined) {
+                            reject(new Error(`Expected a result`));
+                        }
+                        else {
+                            resolve(result);
+                        }
+                    }
+                    else {
+                        reject(err);
+                    }
+                });
+            });
+        });
+    }
     updateAny(table, row, condition) {
         return __awaiter(this, void 0, void 0, function* () {
             const set = this.queryFormat(Database.ToSet(row), row);
@@ -324,20 +343,9 @@ class Database {
             WHERE
                 ${where}
         `;
-            return new Promise((resolve, reject) => {
-                this.rawQuery(queryStr, {}, (err, result) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`));
-                        }
-                        else {
-                            resolve(Object.assign({}, result, { row: row, condition: condition }));
-                        }
-                    }
-                    else {
-                        reject(err);
-                    }
-                });
+            return this.rawUpdate(queryStr, {})
+                .then((result) => {
+                return Object.assign({}, result, { row: row, condition: condition });
             });
         });
     }

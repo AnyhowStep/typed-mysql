@@ -356,6 +356,28 @@ export class Database {
 
         return this.insertAny(table, row);
     }
+    public async rawUpdate (
+        queryStr : string,
+        queryValues : QueryValues
+    ) : Promise<MysqlUpdateResult> {
+        return new Promise<MysqlUpdateResult>((resolve, reject) => {
+            this.rawQuery(
+                queryStr,
+                queryValues,
+                (err, result? : MysqlUpdateResult) => {
+                    if (err == undefined) {
+                        if (result == undefined) {
+                            reject(new Error(`Expected a result`))
+                        } else {
+                            resolve(result);
+                        }
+                    } else {
+                        reject(err);
+                    }
+                }
+            );
+        });
+    }
     public async updateAny<T extends QueryValues, ConditionT extends QueryValues> (
         table : string,
         row : T,
@@ -393,27 +415,14 @@ export class Database {
                 ${where}
         `;
 
-        return new Promise<UpdateResult<T, ConditionT>>((resolve, reject) => {
-            this.rawQuery(
-                queryStr,
-                {},
-                (err, result? : MysqlUpdateResult) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`))
-                        } else {
-                            resolve({
-                                ...result,
-                                row : row,
-                                condition : condition,
-                            });
-                        }
-                    } else {
-                        reject(err);
-                    }
-                }
-            );
-        });
+        return this.rawUpdate(queryStr, {})
+            .then((result) => {
+                return {
+                    ...result,
+                    row : row,
+                    condition : condition,
+                };
+            });
     }
     public async update<T extends QueryValues, ConditionT extends QueryValues> (
         assertRow       : sd.AssertFunc<T>,

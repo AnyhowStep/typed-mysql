@@ -101,6 +101,7 @@ export declare class Database {
     };
     insertAny<T extends QueryValues>(table: string, row: T): Promise<InsertResult<T>>;
     insert<T extends QueryValues>(assert: sd.AssertFunc<T>, table: string, row: T): Promise<InsertResult<T>>;
+    rawUpdate(queryStr: string, queryValues: QueryValues): Promise<MysqlUpdateResult>;
     updateAny<T extends QueryValues, ConditionT extends QueryValues>(table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
     update<T extends QueryValues, ConditionT extends QueryValues>(assertRow: sd.AssertFunc<T>, assertCondition: sd.AssertFunc<ConditionT>, table: string, row: T, condition: ConditionT): Promise<UpdateResult<T, ConditionT>>;
     updateByNumberId<T extends QueryValues>(assert: sd.AssertFunc<T>, table: string, row: T, id: number): Promise<InsertResult<T>>;
