@@ -1,10 +1,4 @@
 "use strict";
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -16,639 +10,407 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const mysql = require("mysql");
 const type_util_1 = require("@anyhowstep/type-util");
-const sd = require("schema-decorator");
-const pagination_1 = require("./pagination");
-const my_util_1 = require("./my-util");
 const UnsafeQuery_1 = require("./UnsafeQuery");
-class Id {
-    constructor() {
-        this.id = 0;
+const ConnectedDatabase_1 = require("./ConnectedDatabase");
+const util = require("./my-util");
+const __dummySelectResult = undefined;
+__dummySelectResult;
+const __dummySelectOneResult = undefined;
+__dummySelectOneResult;
+const __dummySelectZeroOrOneResult = undefined;
+__dummySelectZeroOrOneResult;
+const __dummyInsertResult = undefined;
+__dummyInsertResult;
+const __dummyMySqlUpdateResult = undefined;
+__dummyMySqlUpdateResult;
+const __dummyUpdateResult = undefined;
+__dummyUpdateResult;
+const __dummyMySqlDeleteResult = undefined;
+__dummyMySqlDeleteResult;
+const __dummySelectPaginatedResult = undefined;
+__dummySelectPaginatedResult;
+function insertUnsafeQueries(query, values) {
+    if (values == undefined) {
+        return query;
+    }
+    const newQuery = query.replace(/\:(\w+)/g, (substring, key) => {
+        if (values.hasOwnProperty(key)) {
+            const raw = values[key];
+            if (raw instanceof UnsafeQuery_1.UnsafeQuery) {
+                return raw.value;
+            }
+            else {
+                return substring;
+            }
+        }
+        throw new Error(`Expected a value for ${key} in query`);
+    });
+    if (newQuery == query) {
+        return newQuery;
+    }
+    else {
+        return insertUnsafeQueries(newQuery, values);
     }
 }
-__decorate([
-    sd.assert(sd.naturalNumber())
-], Id.prototype, "id", void 0);
-exports.Id = Id;
-function assertQueryKey(k) {
-    if (!/^\w+$/.test(k)) {
-        throw new Error(`Only alphanumeric, and underscores are allowed to be query keys`);
-    }
+exports.insertUnsafeQueries = insertUnsafeQueries;
+function createQueryFormatCallback(useUtcOnly) {
+    return (query, values) => {
+        if (values == undefined) {
+            return query;
+        }
+        query = insertUnsafeQueries(query, values);
+        const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
+            if (values.hasOwnProperty(key)) {
+                return Database.Escape(values[key], useUtcOnly);
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        return newQuery;
+    };
 }
-exports.assertQueryKey = assertQueryKey;
+exports.createQueryFormatCallback = createQueryFormatCallback;
 class Database {
     constructor(args) {
-        this.paginationConfiguration = new pagination_1.PaginationConfiguration();
         this.useUtcOnly = false;
+        //TODO refactor to another package?
+        this.allocatingDefaultConnection = false;
+        this.onAllocateCallback = [];
         this.queryFormat = (query, values) => {
-            if (values == undefined) {
-                return query;
-            }
-            query = Database.InsertUnsafeQueries(query, values);
-            const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
-                if (values.hasOwnProperty(key)) {
-                    return Database.Escape(values[key], this.useUtcOnly);
-                }
-                throw new Error(`Expected a value for ${key} in query`);
-            });
-            return newQuery;
+            return this.getDefaultConnection().queryFormat(query, values);
         };
-        this.connection = mysql.createConnection({
+        const connectionConfig = {
             host: args.host,
             database: args.database,
             charset: type_util_1.TypeUtil.Coalesce(args.charset, "UTF8_GENERAL_CI"),
             user: args.user,
             password: args.password,
             timezone: type_util_1.TypeUtil.Coalesce(args.timezone, "local"),
-        });
-        this.connection.config.queryFormat = this.queryFormat;
+        };
+        this.pool = mysql.createPool(connectionConfig);
     }
-    static InsertUnsafeQueries(query, values) {
-        if (values == undefined) {
-            return query;
-        }
-        const newQuery = query.replace(/\:(\w+)/g, (substring, key) => {
-            if (values.hasOwnProperty(key)) {
-                const raw = values[key];
-                if (raw instanceof UnsafeQuery_1.UnsafeQuery) {
-                    return raw.value;
-                }
-                else {
-                    return substring;
-                }
-            }
-            throw new Error(`Expected a value for ${key} in query`);
-        });
-        if (newQuery == query) {
-            return newQuery;
-        }
-        else {
-            return Database.InsertUnsafeQueries(newQuery, values);
-        }
-    }
-    getRawConnection() {
-        return this.connection;
-    }
-    connect() {
+    allocatePoolConnection() {
         return new Promise((resolve, reject) => {
-            this.connection.connect((err) => {
-                if (err == undefined) {
-                    resolve();
-                }
-                else {
+            this.pool.getConnection((err, connection) => {
+                if (err != undefined) {
                     reject(err);
+                    return;
                 }
-            });
-        });
-    }
-    rawQuery(queryStr, queryValues, callback) {
-        return this.connection.query(queryStr, queryValues, callback);
-    }
-    selectAny(queryStr, queryValues) {
-        return new Promise((resolve, reject) => {
-            this.rawQuery(queryStr, queryValues, (err, results, fields) => {
-                if (err == undefined) {
-                    if (results == undefined) {
-                        reject(new Error(`Expected results`));
-                        return;
-                    }
-                    if (fields == undefined) {
-                        reject(new Error(`Expected fields`));
-                        return;
-                    }
-                    if (!(results instanceof Array)) {
-                        reject(new Error(`Expected results to be an array`));
-                        return;
-                    }
-                    if (!(fields instanceof Array)) {
-                        reject(new Error(`Expected fields to be an array`));
-                        return;
-                    }
-                    resolve({
-                        rows: results,
-                        fields: fields,
+                connection.config.queryFormat = createQueryFormatCallback(this.useUtcOnly);
+                if (this.useUtcOnly) {
+                    connection.query("SET time_zone = :offset;", {
+                        offset: "+00:00",
+                    }, (err) => {
+                        if (err != undefined) {
+                            reject(err);
+                            return;
+                        }
+                        connection.config.timezone = "Z";
+                        resolve(connection);
                     });
                 }
                 else {
-                    reject(err);
+                    resolve(connection);
                 }
             });
         });
     }
+    getOrAllocateDefaultConnection() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.defaultConnection == undefined) {
+                if (this.allocatingDefaultConnection) {
+                    return new Promise((resolve, reject) => {
+                        this.onAllocateCallback.push({
+                            onAllocate: resolve,
+                            onError: reject,
+                        });
+                    });
+                }
+                else {
+                    this.allocatingDefaultConnection = true;
+                    return new Promise((resolve, reject) => {
+                        this.allocatePoolConnection()
+                            .then((allocated) => {
+                            this.defaultConnection = new ConnectedDatabase_1.ConnectedDatabase(this.useUtcOnly, allocated);
+                            this.allocatingDefaultConnection = false;
+                            //We requested first, so we resolve first
+                            resolve(allocated);
+                            for (let callback of this.onAllocateCallback) {
+                                callback.onAllocate(allocated);
+                            }
+                            this.onAllocateCallback = [];
+                        })
+                            .catch((err) => {
+                            this.allocatingDefaultConnection = false;
+                            //We requested first, so we reject first
+                            reject(err);
+                            for (let callback of this.onAllocateCallback) {
+                                callback.onError(err);
+                            }
+                            this.onAllocateCallback = [];
+                        });
+                    });
+                }
+            }
+            else {
+                return this.defaultConnection;
+            }
+        });
+    }
+    utcOnly() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.useUtcOnly = true;
+            if (this.defaultConnection == undefined) {
+                yield this.getOrAllocateDefaultConnection();
+            }
+            else {
+                this.defaultConnection.releaseConnection();
+                this.defaultConnection = undefined;
+                yield this.getOrAllocateDefaultConnection();
+            }
+        });
+    }
+    getDefaultConnection() {
+        if (this.defaultConnection == undefined) {
+            throw new Error(`Call connect() first, or use getOrAllocateDefaultConnection()`);
+        }
+        return this.defaultConnection;
+    }
+    getRawConnection() {
+        return this.getDefaultConnection().getConnection();
+    }
+    //TODO Phase out
+    static InsertUnsafeQueries(query, values) {
+        return insertUnsafeQueries(query, values);
+    }
+    connect() {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.getOrAllocateDefaultConnection();
+        });
+    }
+    rawQuery(queryStr, queryValues, callback) {
+        return this.getDefaultConnection().rawQuery(queryStr, queryValues, callback);
+    }
+    selectAny(queryStr, queryValues) {
+        return this.getDefaultConnection().selectAny(queryStr, queryValues);
+    }
     select(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const anyResult = yield this.selectAny(queryStr, queryValues);
-            const assertion = sd.array(sd.toAssertDelegateExact(assert));
-            const assertedRows = assertion("results", anyResult.rows);
-            return {
-                rows: assertedRows,
-                fields: anyResult.fields,
-            };
+            return this.getDefaultConnection().select(assert, queryStr, queryValues);
         });
     }
     selectAll(assert, table) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.select(assert, `
-            SELECT
-                *
-            FROM
-                ${mysql.escapeId(table)}
-        `);
+            return this.getDefaultConnection().selectAll(assert, table);
         });
     }
     selectOneAny(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.selectAny(queryStr, queryValues);
-            if (result.rows.length != 1) {
-                throw new Error(`Expected 1 row, received ${result.rows.length}`);
-            }
-            return {
-                row: result.rows[0],
-                fields: result.fields,
-            };
+            return this.getDefaultConnection().selectOneAny(queryStr, queryValues);
         });
     }
     selectOne(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const anyResult = yield this.selectOneAny(queryStr, queryValues);
-            const assertion = sd.toAssertDelegateExact(assert);
-            const assertedRow = assertion("result", anyResult.row);
-            return {
-                row: assertedRow,
-                fields: anyResult.fields,
-            };
+            return this.getDefaultConnection().selectOne(assert, queryStr, queryValues);
         });
     }
     selectZeroOrOneAny(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.selectAny(queryStr, queryValues);
-            if (result.rows.length > 1) {
-                throw new Error(`Expected zero or one rows, received ${result.rows.length}`);
-            }
-            if (result.rows.length == 0) {
-                return {
-                    row: undefined,
-                    fields: result.fields,
-                };
-            }
-            else {
-                return {
-                    row: result.rows[0],
-                    fields: result.fields,
-                };
-            }
+            return this.getDefaultConnection().selectZeroOrOneAny(queryStr, queryValues);
         });
     }
     selectZeroOrOne(assert, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const anyResult = yield this.selectZeroOrOneAny(queryStr, queryValues);
-            if (anyResult.row == undefined) {
-                return anyResult;
-            }
-            const assertion = sd.toAssertDelegateExact(assert);
-            const assertedRow = assertion("result", anyResult.row);
-            return {
-                row: assertedRow,
-                fields: anyResult.fields,
-            };
+            return this.getDefaultConnection().selectZeroOrOne(assert, queryStr, queryValues);
         });
     }
+    //TODO Phase out
     static ToEqualsArray(queryValues) {
-        const result = [];
-        for (let k in queryValues) {
-            if (queryValues.hasOwnProperty(k)) {
-                assertQueryKey(k);
-                if (queryValues[k] === undefined) {
-                    continue;
-                }
-                result.push(`${mysql.escapeId(k)} = :${k}`);
-            }
-        }
-        return result;
+        return util.toEqualsArray(queryValues);
     }
     static ToWhereEquals(queryValues) {
-        const arr = Database.ToEqualsArray(queryValues);
-        return arr.join(" AND ");
+        return util.toWhereEquals(queryValues);
     }
     static ToSet(queryValues) {
-        const arr = Database.ToEqualsArray(queryValues);
-        return arr.join(",");
+        return util.toSet(queryValues);
     }
     static ToOrderBy(orderByArr) {
-        const arr = [];
-        for (let i of orderByArr) {
-            const order = i[1] ? "ASC" : "DESC";
-            arr.push(`${mysql.escapeId(i[0])} ${order}`);
-        }
-        return arr.join(",");
+        return util.toOrderBy(orderByArr);
     }
     static ToInsert(queryValues) {
-        const columnArr = [];
-        const keyArr = [];
-        for (let k in queryValues) {
-            if (queryValues.hasOwnProperty(k)) {
-                assertQueryKey(k);
-                if (queryValues[k] === undefined) {
-                    continue;
-                }
-                columnArr.push(mysql.escapeId(k));
-                keyArr.push(`:${k}`);
-            }
-        }
-        return {
-            columns: columnArr.join(","),
-            keys: keyArr.join(","),
-        };
+        return util.toInsert(queryValues);
     }
     insertAny(table, row) {
         return __awaiter(this, void 0, void 0, function* () {
-            const names = Database.ToInsert(row);
-            const queryStr = `
-            INSERT INTO
-                ${mysql.escapeId(table)} (${names.columns})
-            VALUES (
-                ${names.keys}
-            )
-        `;
-            return new Promise((resolve, reject) => {
-                this.rawQuery(queryStr, row, (err, result) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`));
-                        }
-                        else {
-                            resolve(Object.assign({}, result, { row: row }));
-                        }
-                    }
-                    else {
-                        reject(err);
-                    }
-                });
-            });
+            return this.getDefaultConnection().insertAny(table, row);
         });
     }
     insert(assert, table, row) {
         return __awaiter(this, void 0, void 0, function* () {
-            //Just to be safe
-            row = sd.toAssertDelegateExact(assert)("insert target", row);
-            //TODO Seems like this line can be deleted...
-            //const queryValues = sd.toRaw("insert target", row);
-            return this.insertAny(table, row);
+            return this.getDefaultConnection().insert(assert, table, row);
         });
     }
     rawUpdate(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                this.rawQuery(queryStr, queryValues, (err, result) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`));
-                        }
-                        else {
-                            resolve(result);
-                        }
-                    }
-                    else {
-                        reject(err);
-                    }
-                });
-            });
+            return this.getDefaultConnection().rawUpdate(queryStr, queryValues);
         });
     }
     updateAny(table, row, condition) {
         return __awaiter(this, void 0, void 0, function* () {
-            const set = this.queryFormat(Database.ToSet(row), row);
-            if (set == "") {
-                return {
-                    fieldCount: 0,
-                    affectedRows: -1,
-                    insertId: 0,
-                    serverStatus: 0,
-                    warningCount: 1,
-                    message: "SET clause is empty; no updates occurred",
-                    protocol41: false,
-                    changedRows: 0,
-                    row: row,
-                    condition: condition,
-                };
-            }
-            let where = this.queryFormat(Database.ToWhereEquals(condition), condition);
-            if (where == "") {
-                where = "TRUE";
-            }
-            const queryStr = `
-            UPDATE
-                ${mysql.escapeId(table)}
-            SET
-                ${set}
-            WHERE
-                ${where}
-        `;
-            return this.rawUpdate(queryStr, {})
-                .then((result) => {
-                return Object.assign({}, result, { row: row, condition: condition });
-            });
+            return this.getDefaultConnection().updateAny(table, row, condition);
         });
     }
     update(assertRow, assertCondition, table, row, condition) {
         return __awaiter(this, void 0, void 0, function* () {
-            //Just to be safe
-            row = sd.toAssertDelegateExact(assertRow)("update target", row);
-            condition = sd.toAssertDelegateExact(assertCondition)("update condition", condition);
-            return this.updateAny(table, row, condition);
+            return this.getDefaultConnection().update(assertRow, assertCondition, table, row, condition);
         });
     }
     updateByNumberId(assert, table, row, id) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.update(assert, Id, table, row, {
-                id: id,
-            });
+            return this.getDefaultConnection().updateByNumberId(assert, table, row, id);
         });
     }
     rawDelete(queryStr, queryValues) {
-        return new Promise((resolve, reject) => {
-            this.rawQuery(queryStr, queryValues, (err, results) => {
-                if (err == undefined) {
-                    if (results == undefined) {
-                        reject(new Error(`Expected results`));
-                        return;
-                    }
-                    resolve(results);
-                }
-                else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().rawDelete(queryStr, queryValues);
     }
     //Too dangerous to call this without queryValues or with empty queryValues
     delete(table, queryValues) {
-        if (Object.getOwnPropertyNames(queryValues).length == 0) {
-            throw new Error(`Expected at least one query value; if you want to delete everything, consider rawDelete`);
-        }
-        const queryStr = `
-            DELETE FROM
-                ${mysql.escapeId(table)}
-            WHERE
-                ${Database.ToWhereEquals(queryValues)}
-        `;
-        return this.rawDelete(queryStr, queryValues);
+        return this.getDefaultConnection().delete(table, queryValues);
     }
     getAny(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.selectAny(queryStr, queryValues);
-            if (result.rows.length == 0) {
-                return undefined;
-            }
-            if (result.rows.length != 1) {
-                throw new Error(`Expected 1 row, received ${result.rows.length}`);
-            }
-            if (result.fields.length != 1) {
-                throw new Error(`Expected one field, received ${result.fields.length}`);
-            }
-            const k = result.fields[0].name;
-            const value = result.rows[0][k];
-            return value;
+            return this.getDefaultConnection().getAny(queryStr, queryValues);
         });
     }
     get(assertion, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const anyValue = yield this.getAny(queryStr, queryValues);
-            const value = assertion("value", anyValue);
-            return value;
+            return this.getDefaultConnection().get(assertion, queryStr, queryValues);
         });
     }
     getBoolean(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.get(sd.numberToBoolean(), queryStr, queryValues);
+            return this.getDefaultConnection().getBoolean(queryStr, queryValues);
         });
     }
     getNumber(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.get(sd.number(), queryStr, queryValues);
+            return this.getDefaultConnection().getNumber(queryStr, queryValues);
         });
     }
     getNaturalNumber(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.get(sd.naturalNumber(), queryStr, queryValues);
+            return this.getDefaultConnection().getNaturalNumber(queryStr, queryValues);
         });
     }
     getString(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.get(sd.string(), queryStr, queryValues);
+            return this.getDefaultConnection().getString(queryStr, queryValues);
         });
     }
     getDate(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.get(sd.date(), queryStr, queryValues);
+            return this.getDefaultConnection().getDate(queryStr, queryValues);
         });
     }
     exists(table, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const queryStr = `
-            SELECT EXISTS (
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            )
-        `;
-            const result = yield this.getBoolean(queryStr, queryValues);
-            return result;
+            return this.getDefaultConnection().exists(table, queryValues);
         });
     }
     now() {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.getDate("SELECT NOW()");
-            return result;
+            return this.getDefaultConnection().now();
         });
     }
     static Escape(raw, toUTCIfDate = false) {
-        if (raw instanceof Date && toUTCIfDate) {
-            const year = my_util_1.zeroPad(raw.getUTCFullYear(), 4);
-            const month = my_util_1.zeroPad(raw.getUTCMonth() + 1, 2);
-            const day = my_util_1.zeroPad(raw.getUTCDate(), 2);
-            const hour = my_util_1.zeroPad(raw.getUTCHours(), 2);
-            const minute = my_util_1.zeroPad(raw.getUTCMinutes(), 2);
-            const second = my_util_1.zeroPad(raw.getUTCSeconds(), 2);
-            const ms = my_util_1.zeroPad(raw.getMilliseconds(), 3);
-            return mysql.escape(`${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`);
-        }
-        else {
-            return mysql.escape(raw);
-        }
+        return util.escape(raw, toUTCIfDate);
     }
     static EscapeId(raw) {
         return mysql.escapeId(raw);
     }
     getArrayAny(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const result = yield this.selectAny(queryStr, queryValues);
-            if (result.fields.length != 1) {
-                throw new Error(`Expected one field, received ${result.fields.length}`);
-            }
-            const k = result.fields[0].name;
-            const arr = [];
-            for (let row of result.rows) {
-                const value = row[k];
-                arr.push(value);
-            }
-            return arr;
+            return this.getDefaultConnection().getArrayAny(queryStr, queryValues);
         });
     }
     getArray(assertion, queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            const anyArr = yield this.getArrayAny(queryStr, queryValues);
-            const arr = sd.array(assertion)("array", anyArr);
-            return arr;
+            return this.getDefaultConnection().getArray(assertion, queryStr, queryValues);
         });
     }
     getBooleanArray(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.getArray(sd.numberToBoolean(), queryStr, queryValues);
+            return this.getDefaultConnection().getBooleanArray(queryStr, queryValues);
         });
     }
     getNumberArray(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.getArray(sd.number(), queryStr, queryValues);
+            return this.getDefaultConnection().getNumberArray(queryStr, queryValues);
         });
     }
     getNaturalNumberArray(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.getArray(sd.naturalNumber(), queryStr, queryValues);
+            return this.getDefaultConnection().getNaturalNumberArray(queryStr, queryValues);
         });
     }
     getStringArray(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.getArray(sd.string(), queryStr, queryValues);
+            return this.getDefaultConnection().getStringArray(queryStr, queryValues);
         });
     }
     getDateArray(queryStr, queryValues) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.getArray(sd.date(), queryStr, queryValues);
+            return this.getDefaultConnection().getDateArray(queryStr, queryValues);
         });
     }
+    //TODO Phase out
     beginTransaction() {
-        return new Promise((resolve, reject) => {
-            this.connection.beginTransaction((err) => {
-                if (err == undefined) {
-                    resolve();
-                }
-                else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().beginTransaction();
     }
+    //TODO Phase out
     rollback() {
-        return new Promise((resolve, reject) => {
-            this.connection.rollback((err) => {
-                if (err == undefined) {
-                    resolve();
-                }
-                else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().rollback();
     }
+    //TODO Phase out
     commit() {
-        return new Promise((resolve, reject) => {
-            this.connection.commit((err) => {
-                if (err == undefined) {
-                    resolve();
-                }
-                else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().commit();
     }
     getPaginationConfiguration() {
-        return Object.assign({}, this.paginationConfiguration);
+        return this.getDefaultConnection().getPaginationConfiguration();
     }
     setPaginationConfiguration(paginationConfiguration) {
-        this.paginationConfiguration = sd.toClassExact("paginationConfiguration", paginationConfiguration, pagination_1.PaginationConfiguration);
+        return this.getDefaultConnection().setPaginationConfiguration(paginationConfiguration);
     }
     selectPaginated(assert, queryStr, queryValues, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
-            const paginationArgs = pagination_1.toPaginationArgs(type_util_1.TypeUtil.Coalesce(rawPaginationArgs, {}), this.paginationConfiguration);
-            if (queryStr.indexOf("SQL_CALC_FOUND_ROWS") < 0) {
-                if (queryStr.indexOf(":__start") >= 0 || queryStr.indexOf(":__count") >= 0) {
-                    throw new Error(`Cannot specify :__start, and :__count, reserved for pagination queries`);
-                }
-                queryStr = queryStr
-                    .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
-                    .concat(` LIMIT :__start, :__count`);
-            }
-            else {
-                if (queryStr.indexOf(":__start") < 0 || queryStr.indexOf(":__count") < 0) {
-                    throw new Error(`You must specify both :__start, and :__count, for pagination queries since SQL_CALC_FOUND_ROWS was specified`);
-                }
-            }
-            const page = yield this.select(assert, queryStr, Object.assign({}, queryValues, { __start: pagination_1.getPaginationStart(paginationArgs), __count: paginationArgs.itemsPerPage }));
-            const itemsFound = yield this.getNumber(`SELECT FOUND_ROWS()`);
-            const pagesFound = (Math.floor(itemsFound / paginationArgs.itemsPerPage) +
-                ((itemsFound % paginationArgs.itemsPerPage == 0) ?
-                    0 : 1));
-            return {
-                info: Object.assign({ itemsFound: itemsFound, pagesFound: pagesFound }, paginationArgs),
-                page: page,
-            };
+            return this.getDefaultConnection().selectPaginated(assert, queryStr, queryValues, rawPaginationArgs);
         });
     }
     simpleSelectZeroOrOne(assert, table, queryValues = {}) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.selectZeroOrOne(assert, `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            `, queryValues);
+            return this.getDefaultConnection().simpleSelectZeroOrOne(assert, table, queryValues);
         });
     }
     simpleSelectOne(assert, table, queryValues = {}) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.selectOne(assert, `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            `, queryValues);
+            return this.getDefaultConnection().simpleSelectOne(assert, table, queryValues);
         });
     }
     simpleSelectPaginated(assert, table, orderBy, queryValues = {}, rawPaginationArgs) {
         return __awaiter(this, void 0, void 0, function* () {
-            let where = Database.ToWhereEquals(queryValues);
-            if (where == "") {
-                where = "TRUE";
-            }
-            return this.selectPaginated(assert, `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${where}
-                ORDER BY
-                    ${Database.ToOrderBy(orderBy)}
-            `, queryValues, rawPaginationArgs);
+            return this.getDefaultConnection().simpleSelectPaginated(assert, table, orderBy, queryValues, rawPaginationArgs);
         });
     }
-    utcOnly() {
-        return new Promise((resolve) => {
-            this.rawQuery("SET time_zone = :offset;", {
-                offset: "+00:00",
-            }, () => {
-                this.connection.config.timezone = "Z";
-                this.useUtcOnly = true;
-                resolve();
-            });
+    escape(raw) {
+        this.getDefaultConnection().escape(raw);
+    }
+    transaction(callback) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const allocated = new ConnectedDatabase_1.ConnectedDatabase(this.useUtcOnly, yield this.allocatePoolConnection());
+            allocated.setPaginationConfiguration(this.getPaginationConfiguration());
+            yield allocated.beginTransaction();
+            yield callback(allocated);
+            yield allocated.commit();
+            allocated.releaseConnection();
         });
     }
 }

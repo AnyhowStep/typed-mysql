@@ -1,35 +1,79 @@
 import * as mysql from "mysql";
 import * as sd from "schema-decorator";
-import { PaginationConfiguration, RawPaginationArgs } from "./pagination";
-import { ConnectedDatabase } from "./ConnectedDatabase";
 import { QueryValues } from "./QueryValues";
 import { OrderByItem } from "./OrderByItem";
-import { SelectResult, SelectOneResult, SelectZeroOrOneResult, InsertResult, MysqlUpdateResult, UpdateResult, MysqlDeleteResult, SelectPaginatedResult } from "./ConnectedDatabase";
-export interface DatabaseArgs {
-    host: string;
-    database: string;
-    charset?: string;
-    user: string;
-    password: string;
-    timezone?: string;
+import { PaginationConfiguration, RawPaginationArgs } from "./pagination";
+export interface SelectResult<T> {
+    rows: T[];
+    fields: mysql.FieldInfo[];
 }
-export declare function insertUnsafeQueries(query: string, values: any): string;
-export declare function createQueryFormatCallback(useUtcOnly: boolean): (query: string, values: any) => string;
-export declare class Database {
-    private pool;
-    private defaultConnection;
+export interface SelectOneResult<T> {
+    row: T;
+    fields: mysql.FieldInfo[];
+}
+export interface SelectZeroOrOneResult<T> {
+    row?: T;
+    fields: mysql.FieldInfo[];
+}
+export interface MysqlInsertResult {
+    fieldCount: number;
+    affectedRows: number;
+    insertId: number;
+    serverStatus: number;
+    warningCount: number;
+    message: string;
+    protocol41: boolean;
+    changedRows: number;
+}
+export interface InsertResult<T> extends MysqlInsertResult {
+    row: T;
+}
+export interface MysqlUpdateResult {
+    fieldCount: number;
+    affectedRows: number;
+    insertId: number;
+    serverStatus: number;
+    warningCount: number;
+    message: string;
+    protocol41: boolean;
+    changedRows: number;
+}
+export interface UpdateResult<T, ConditionT> extends MysqlUpdateResult {
+    row: T;
+    condition: ConditionT;
+}
+export interface MysqlDeleteResult {
+    fieldCount: number;
+    affectedRows: number;
+    insertId: number;
+    serverStatus: number;
+    warningCount: number;
+    message: string;
+    protocol41: boolean;
+    changedRows: number;
+}
+export declare class Id {
+    id: number;
+}
+export interface SelectPaginatedInfo {
+    itemsFound: number;
+    pagesFound: number;
+    page: number;
+    itemsPerPage: number;
+}
+export interface SelectPaginatedResult<T> {
+    info: SelectPaginatedInfo;
+    page: SelectResult<T>;
+}
+export declare class ConnectedDatabase {
     private useUtcOnly;
-    allocatePoolConnection(): Promise<mysql.PoolConnection>;
-    private allocatingDefaultConnection;
-    private onAllocateCallback;
-    getOrAllocateDefaultConnection(): Promise<mysql.PoolConnection | ConnectedDatabase>;
-    utcOnly(): Promise<void>;
-    getDefaultConnection(): ConnectedDatabase;
-    getRawConnection(): mysql.Connection;
-    constructor(args: DatabaseArgs);
-    static InsertUnsafeQueries(query: string, values: any): string;
-    readonly queryFormat: (query: string, values: any) => string;
-    connect(): Promise<void>;
+    private connection;
+    private paginationConfiguration;
+    constructor(useUtcOnly: boolean, connection?: mysql.PoolConnection | undefined);
+    setConnection(connection: mysql.PoolConnection): void;
+    getConnection(): mysql.PoolConnection;
+    releaseConnection(): void;
+    queryFormat(query: string, values: QueryValues): string;
     rawQuery(queryStr: string, queryValues: QueryValues | undefined, callback: (err: mysql.MysqlError | null, results?: any, fields?: mysql.FieldInfo[]) => void): mysql.Query;
     selectAny(queryStr: string, queryValues?: QueryValues): Promise<SelectResult<any>>;
     select<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectResult<T>>;
@@ -38,14 +82,6 @@ export declare class Database {
     selectOne<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     selectZeroOrOneAny(queryStr: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<any>>;
     selectZeroOrOne<T>(assert: sd.AssertFunc<T>, queryStr: string, queryValues?: QueryValues): Promise<SelectZeroOrOneResult<T>>;
-    static ToEqualsArray(queryValues: QueryValues): string[];
-    static ToWhereEquals(queryValues: QueryValues): string;
-    static ToSet(queryValues: QueryValues): string;
-    static ToOrderBy(orderByArr: OrderByItem[]): string;
-    static ToInsert(queryValues: QueryValues): {
-        columns: string;
-        keys: string;
-    };
     insertAny<T extends QueryValues>(table: string, row: T): Promise<InsertResult<T>>;
     insert<T extends QueryValues>(assert: sd.AssertFunc<T>, table: string, row: T): Promise<InsertResult<T>>;
     rawUpdate(queryStr: string, queryValues: QueryValues): Promise<MysqlUpdateResult>;
@@ -63,8 +99,6 @@ export declare class Database {
     getDate(queryStr: string, queryValues?: QueryValues): Promise<Date>;
     exists(table: string, queryValues: QueryValues): Promise<boolean>;
     now(): Promise<Date>;
-    static Escape(raw: any, toUTCIfDate?: boolean): string;
-    static EscapeId(raw: string): string;
     getArrayAny(queryStr: string, queryValues?: QueryValues): Promise<any[]>;
     getArray<T>(assertion: sd.AssertDelegate<T>, queryStr: string, queryValues?: QueryValues): Promise<T[]>;
     getBooleanArray(queryStr: string, queryValues?: QueryValues): Promise<boolean[]>;
@@ -87,5 +121,4 @@ export declare class Database {
     simpleSelectOne<T>(assert: sd.AssertFunc<T>, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     simpleSelectPaginated<T>(assert: sd.AssertFunc<T>, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
     escape(raw: any): void;
-    transaction(callback: (db: ConnectedDatabase) => Promise<void>): Promise<void>;
 }

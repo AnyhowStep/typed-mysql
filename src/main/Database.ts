@@ -1,9 +1,39 @@
 import * as mysql from "mysql";
 import {TypeUtil} from "@anyhowstep/type-util";
 import * as sd from "schema-decorator";
-import {PaginationConfiguration, RawPaginationArgs, toPaginationArgs, getPaginationStart} from "./pagination";
-import {zeroPad} from "./my-util";
+import {PaginationConfiguration, RawPaginationArgs} from "./pagination";
 import {UnsafeQuery} from "./UnsafeQuery";
+import {ConnectedDatabase} from "./ConnectedDatabase";
+import {QueryValues} from "./QueryValues";
+import {OrderByItem} from "./OrderByItem";
+import * as util from "./my-util";
+import {
+    SelectResult,
+    SelectOneResult,
+    SelectZeroOrOneResult,
+    InsertResult,
+    MysqlUpdateResult,
+    UpdateResult,
+    MysqlDeleteResult,
+    SelectPaginatedResult,
+} from "./ConnectedDatabase";
+
+const __dummySelectResult : SelectResult<any>|undefined = undefined;
+__dummySelectResult;
+const __dummySelectOneResult : SelectOneResult<any>|undefined = undefined;
+__dummySelectOneResult;
+const __dummySelectZeroOrOneResult : SelectZeroOrOneResult<any>|undefined = undefined;
+__dummySelectZeroOrOneResult;
+const __dummyInsertResult : InsertResult<any>|undefined = undefined;
+__dummyInsertResult;
+const __dummyMySqlUpdateResult : MysqlUpdateResult|undefined = undefined;
+__dummyMySqlUpdateResult;
+const __dummyUpdateResult : UpdateResult<any, any>|undefined = undefined;
+__dummyUpdateResult;
+const __dummyMySqlDeleteResult : MysqlDeleteResult|undefined = undefined;
+__dummyMySqlDeleteResult;
+const __dummySelectPaginatedResult : SelectPaginatedResult<any>|undefined = undefined;
+__dummySelectPaginatedResult;
 
 export interface DatabaseArgs {
     host      : string;
@@ -13,416 +43,245 @@ export interface DatabaseArgs {
     password  : string;
     timezone? : string; //Default local
 }
-export type QueryValues = {};//{ [key : string] : string|number|boolean|Date|null|undefined|UnsafeQuery };
-export interface SelectResult<T> {
-    rows   : T[];
-    fields : mysql.FieldInfo[];
-}
-export interface SelectOneResult<T> {
-    row    : T;
-    fields : mysql.FieldInfo[];
-}
-export interface SelectZeroOrOneResult<T> {
-    row?   : T;
-    fields : mysql.FieldInfo[];
-}
-export interface MysqlInsertResult {
-    fieldCount   : number;
-    affectedRows : number;
-    insertId     : number;
-    serverStatus : number;
-    warningCount : number;
-    message      : string;
-    protocol41   : boolean;
-    changedRows  : number;
-}
-export interface InsertResult<T> extends MysqlInsertResult {
-    row : T;
-}
-export interface MysqlUpdateResult {
-    fieldCount   : number;
-    affectedRows : number;
-    insertId     : number;
-    serverStatus : number;
-    warningCount : number;
-    message      : string;
-    protocol41   : boolean;
-    changedRows  : number;
-}
-export interface UpdateResult<T, ConditionT> extends MysqlUpdateResult {
-    row : T;
-    condition : ConditionT;
-}
-export interface MysqlDeleteResult {
-    fieldCount   : number;
-    affectedRows : number;
-    insertId     : number;
-    serverStatus : number;
-    warningCount : number;
-    message      : string;
-    protocol41   : boolean;
-    changedRows  : number;
-}
-export class Id {
-    @sd.assert(sd.naturalNumber())
-    id : number = 0;
-}
-export function assertQueryKey (k : string) {
-    if (!/^\w+$/.test(k)) {
-        throw new Error(`Only alphanumeric, and underscores are allowed to be query keys`);
+
+
+export function insertUnsafeQueries (query : string, values : any) : string {
+    if (values == undefined) {
+        return query;
+    }
+    const newQuery = query.replace(/\:(\w+)/g, (substring : string, key : string) => {
+        if (values.hasOwnProperty(key)) {
+            const raw = values[key];
+            if (raw instanceof UnsafeQuery) {
+                return raw.value;
+            } else {
+                return substring;
+            }
+        }
+        throw new Error(`Expected a value for ${key} in query`);
+    });
+    if (newQuery == query) {
+        return newQuery;
+    } else {
+        return insertUnsafeQueries(newQuery, values);
     }
 }
-export interface SelectPaginatedInfo {
-    itemsFound : number,
-    pagesFound : number,
-    page : number,
-    itemsPerPage : number,
+export function createQueryFormatCallback (useUtcOnly : boolean) {
+    return (query : string, values : any) : string => {
+        if (values == undefined) {
+            return query;
+        }
+        query = insertUnsafeQueries(query, values);
+        const newQuery = query.replace(/\:(\w+)/g, (_substring : string, key : string) => {
+            if (values.hasOwnProperty(key)) {
+                return Database.Escape(values[key], useUtcOnly);
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        return newQuery;
+    };
 }
-export interface SelectPaginatedResult<T> {
-    info : SelectPaginatedInfo,
-    page : SelectResult<T>
-}
-export type OrderByItem = [string, boolean];
 
 export class Database {
-    private connection : mysql.Connection;
-    private paginationConfiguration : PaginationConfiguration = new PaginationConfiguration();
+    private pool : mysql.Pool;
+    private defaultConnection : ConnectedDatabase|undefined;
     private useUtcOnly : boolean = false;
 
+    public allocatePoolConnection () {
+        return new Promise<mysql.PoolConnection>((resolve, reject) => {
+            this.pool.getConnection((err, connection) => {
+                if (err != undefined) {
+                    reject(err);
+                    return;
+                }
+                connection.config.queryFormat = createQueryFormatCallback(this.useUtcOnly);
+                if (this.useUtcOnly) {
+                    connection.query(
+                        "SET time_zone = :offset;",
+                        {
+                            offset : "+00:00",
+                        },
+                        (err) => {
+                            if (err != undefined) {
+                                reject(err);
+                                return;
+                            }
+                            connection.config.timezone = "Z";
+                            resolve(connection);
+                        }
+                    );
+                } else {
+                    resolve(connection);
+                }
+            });
+        });
+    }
+
+    //TODO refactor to another package?
+    private allocatingDefaultConnection = false;
+    private onAllocateCallback : ({
+        onAllocate : (allocated : mysql.PoolConnection) => void,
+        onError : (err : Error) => void,
+    })[] = [];
+    public async getOrAllocateDefaultConnection () {
+        if (this.defaultConnection == undefined) {
+            if (this.allocatingDefaultConnection) {
+                return new Promise<mysql.PoolConnection>((resolve, reject) => {
+                    this.onAllocateCallback.push({
+                        onAllocate : resolve,
+                        onError : reject,
+                    });
+                });
+            } else {
+                this.allocatingDefaultConnection = true;
+                return new Promise<mysql.PoolConnection>((resolve, reject) => {
+                    this.allocatePoolConnection()
+                        .then((allocated) => {
+                            this.defaultConnection = new ConnectedDatabase(this.useUtcOnly, allocated);
+                            this.allocatingDefaultConnection = false;
+
+                            //We requested first, so we resolve first
+                            resolve(allocated);
+                            for (let callback of this.onAllocateCallback) {
+                                callback.onAllocate(allocated);
+                            }
+                            this.onAllocateCallback = [];
+                        })
+                        .catch((err) => {
+                            this.allocatingDefaultConnection = false;
+
+                            //We requested first, so we reject first
+                            reject(err);
+                            for (let callback of this.onAllocateCallback) {
+                                callback.onError(err);
+                            }
+                            this.onAllocateCallback = [];
+                        });
+                });
+            }
+        } else {
+            return this.defaultConnection;
+        }
+    }
+    public async utcOnly () : Promise<void> {
+        this.useUtcOnly = true;
+        if (this.defaultConnection == undefined) {
+            await this.getOrAllocateDefaultConnection();
+        } else {
+            this.defaultConnection.releaseConnection();
+            this.defaultConnection = undefined;
+            await this.getOrAllocateDefaultConnection();
+        }
+    }
+
+    public getDefaultConnection () : ConnectedDatabase {
+        if (this.defaultConnection == undefined) {
+            throw new Error(`Call connect() first, or use getOrAllocateDefaultConnection()`);
+        }
+        return this.defaultConnection;
+    }
+    public getRawConnection () : mysql.Connection {
+        return this.getDefaultConnection().getConnection();
+    }
+
     public constructor (args : DatabaseArgs) {
-        this.connection = mysql.createConnection({
+        const connectionConfig = {
             host     : args.host,
             database : args.database,
             charset  : TypeUtil.Coalesce<string>(args.charset, "UTF8_GENERAL_CI"),
             user     : args.user,
             password : args.password,
             timezone : TypeUtil.Coalesce<string>(args.timezone, "local"),
-        });
-        this.connection.config.queryFormat = this.queryFormat;
+        };
+        this.pool = mysql.createPool(connectionConfig);
     }
+    //TODO Phase out
     public static InsertUnsafeQueries (query : string, values : any) : string {
-        if (values == undefined) {
-            return query;
-        }
-        const newQuery = query.replace(/\:(\w+)/g, (substring : string, key : string) => {
-            if (values.hasOwnProperty(key)) {
-                const raw = values[key];
-                if (raw instanceof UnsafeQuery) {
-                    return raw.value;
-                } else {
-                    return substring;
-                }
-            }
-            throw new Error(`Expected a value for ${key} in query`);
-        });
-        if (newQuery == query) {
-            return newQuery;
-        } else {
-            return Database.InsertUnsafeQueries(newQuery, values);
-        }
+        return insertUnsafeQueries(query, values);
     }
     public readonly queryFormat = (query : string, values : any) : string => {
-        if (values == undefined) {
-            return query;
-        }
-        query = Database.InsertUnsafeQueries(query, values);
-        const newQuery = query.replace(/\:(\w+)/g, (_substring : string, key : string) => {
-            if (values.hasOwnProperty(key)) {
-                return Database.Escape(values[key], this.useUtcOnly);
-            }
-            throw new Error(`Expected a value for ${key} in query`);
-        });
-        return newQuery;
+        return this.getDefaultConnection().queryFormat(query, values);
     };
-    public getRawConnection () : mysql.Connection {
-        return this.connection;
-    }
-    public connect () : Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.connection.connect((err) => {
-                if (err == undefined) {
-                    resolve();
-                } else {
-                    reject(err);
-                }
-            });
-        });
+    public async connect () : Promise<void> {
+        await this.getOrAllocateDefaultConnection();
     }
     public rawQuery (queryStr : string, queryValues : QueryValues|undefined, callback : (err: mysql.MysqlError | null, results?: any, fields?: mysql.FieldInfo[]) => void) {
-        return this.connection.query(
+        return this.getDefaultConnection().rawQuery(
             queryStr,
             queryValues,
             callback
         );
     }
-    public selectAny (queryStr : string, queryValues? : QueryValues) : Promise<SelectResult<any>> {
-        return new Promise<SelectResult<any>>((resolve, reject) => {
-            this.rawQuery(
-                queryStr,
-                queryValues,
-                (err, results? : any, fields? : mysql.FieldInfo[]) => {
-                    if (err == undefined) {
-                        if (results == undefined) {
-                            reject(new Error(`Expected results`));
-                            return;
-                        }
-                        if (fields == undefined) {
-                            reject(new Error(`Expected fields`));
-                            return;
-                        }
-                        if (!(results instanceof Array)) {
-                            reject(new Error(`Expected results to be an array`));
-                            return;
-                        }
-                        if (!(fields instanceof Array)) {
-                            reject(new Error(`Expected fields to be an array`));
-                            return;
-                        }
-
-                        resolve({
-                            rows : results,
-                            fields  : fields,
-                        });
-                    } else {
-                        reject(err);
-                    }
-                }
-            );
-        });
+    public selectAny (queryStr : string, queryValues? : QueryValues) {
+        return this.getDefaultConnection().selectAny(queryStr, queryValues);
     }
     public async select<T> (
         assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
-    ) : Promise<SelectResult<T>> {
-        const anyResult    = await this.selectAny(queryStr, queryValues);
-        const assertion    = sd.array(sd.toAssertDelegateExact(assert));
-        const assertedRows = assertion("results", anyResult.rows);
-        return {
-            rows   : assertedRows,
-            fields : anyResult.fields,
-        };
+    ) {
+        return this.getDefaultConnection().select(assert, queryStr, queryValues);
     }
     public async selectAll<T> (
         assert : sd.AssertFunc<T>,
         table  : string
-    ) : Promise<SelectResult<T>> {
-        return this.select(assert, `
-            SELECT
-                *
-            FROM
-                ${mysql.escapeId(table)}
-        `);
+    ) {
+        return this.getDefaultConnection().selectAll(assert, table);
     }
-    public async selectOneAny (queryStr : string, queryValues? : QueryValues) : Promise<SelectOneResult<any>> {
-        const result = await this.selectAny(queryStr, queryValues);
-        if (result.rows.length != 1) {
-            throw new Error(`Expected 1 row, received ${result.rows.length}`);
-        }
-        return {
-            row    : result.rows[0],
-            fields : result.fields,
-        };
+    public async selectOneAny (queryStr : string, queryValues? : QueryValues) {
+        return this.getDefaultConnection().selectOneAny(queryStr, queryValues);
     }
     public async selectOne<T> (
         assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
-    ) : Promise<SelectOneResult<T>> {
-        const anyResult = await this.selectOneAny(queryStr, queryValues);
-        const assertion   = sd.toAssertDelegateExact(assert);
-        const assertedRow = assertion("result", anyResult.row);
-        return {
-            row    : assertedRow,
-            fields : anyResult.fields,
-        };
+    ) {
+        return this.getDefaultConnection().selectOne(assert, queryStr, queryValues);
     }
-    public async selectZeroOrOneAny (queryStr : string, queryValues? : QueryValues) : Promise<SelectZeroOrOneResult<any>> {
-        const result = await this.selectAny(queryStr, queryValues);
-        if (result.rows.length > 1) {
-            throw new Error(`Expected zero or one rows, received ${result.rows.length}`);
-        }
-        if (result.rows.length == 0) {
-            return {
-                row    : undefined,
-                fields : result.fields,
-            };
-        } else {
-            return {
-                row    : result.rows[0],
-                fields : result.fields,
-            };
-        }
+    public async selectZeroOrOneAny (queryStr : string, queryValues? : QueryValues) {
+        return this.getDefaultConnection().selectZeroOrOneAny(queryStr, queryValues);
     }
     public async selectZeroOrOne<T> (
         assert       : sd.AssertFunc<T>,
         queryStr     : string,
         queryValues? : QueryValues
-    ) : Promise<SelectZeroOrOneResult<T>> {
-        const anyResult = await this.selectZeroOrOneAny(queryStr, queryValues);
-        if (anyResult.row == undefined) {
-            return anyResult;
-        }
-        const assertion   = sd.toAssertDelegateExact(assert);
-        const assertedRow = assertion("result", anyResult.row);
-        return {
-            row    : assertedRow,
-            fields : anyResult.fields,
-        };
+    ) {
+        return this.getDefaultConnection().selectZeroOrOne(assert, queryStr, queryValues);
     }
+    //TODO Phase out
     public static ToEqualsArray (queryValues : QueryValues) {
-        const result : string[] = [];
-        for (let k in queryValues) {
-            if (queryValues.hasOwnProperty(k)) {
-                assertQueryKey(k);
-                if ((queryValues as any)[k] === undefined) {
-                    continue;
-                }
-                result.push(`${mysql.escapeId(k)} = :${k}`);
-            }
-        }
-        return result;
+        return util.toEqualsArray(queryValues);
     }
     public static ToWhereEquals (queryValues : QueryValues) {
-        const arr = Database.ToEqualsArray(queryValues);
-        return arr.join(" AND ");
+        return util.toWhereEquals(queryValues);
     }
     public static ToSet (queryValues : QueryValues) {
-        const arr = Database.ToEqualsArray(queryValues);
-        return arr.join(",");
+        return util.toSet(queryValues);
     }
     public static ToOrderBy (orderByArr : OrderByItem[]) {
-        const arr : string[] = [];
-        for (let i of orderByArr) {
-            const order = i[1] ? "ASC" : "DESC";
-            arr.push(`${mysql.escapeId(i[0])} ${order}`);
-        }
-        return arr.join(",");
+        return util.toOrderBy(orderByArr);
     }
     public static ToInsert (queryValues : QueryValues) {
-        const columnArr : string[] = [];
-        const keyArr    : string[] = [];
-        for (let k in queryValues) {
-            if (queryValues.hasOwnProperty(k)) {
-                assertQueryKey(k);
-                if ((queryValues as any)[k] === undefined) {
-                    continue;
-                }
-                columnArr.push(mysql.escapeId(k));
-                keyArr.push(`:${k}`)
-            }
-        }
-        return {
-            columns : columnArr.join(","),
-            keys : keyArr.join(","),
-        };
+        return util.toInsert(queryValues);
     }
-    public async insertAny<T extends QueryValues> (table : string, row : T) : Promise<InsertResult<T>> {
-        const names = Database.ToInsert(row);
-
-        const queryStr = `
-            INSERT INTO
-                ${mysql.escapeId(table)} (${names.columns})
-            VALUES (
-                ${names.keys}
-            )
-        `;
-        return new Promise<InsertResult<T>>((resolve, reject) => {
-            this.rawQuery(
-                queryStr,
-                row,
-                (err, result? : MysqlInsertResult) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`))
-                        } else {
-                            resolve({
-                                ...result,
-                                row : row,
-                            });
-                        }
-                    } else {
-                        reject(err);
-                    }
-                }
-            );
-        });
+    public async insertAny<T extends QueryValues> (table : string, row : T) {
+        return this.getDefaultConnection().insertAny(table, row);
     }
-    public async insert<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T) : Promise<InsertResult<T>> {
-        //Just to be safe
-        row = sd.toAssertDelegateExact(assert)("insert target", row);
-        //TODO Seems like this line can be deleted...
-        //const queryValues = sd.toRaw("insert target", row);
-
-        return this.insertAny(table, row);
+    public async insert<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T) {
+        return this.getDefaultConnection().insert(assert, table, row);
     }
     public async rawUpdate (
         queryStr : string,
         queryValues : QueryValues
-    ) : Promise<MysqlUpdateResult> {
-        return new Promise<MysqlUpdateResult>((resolve, reject) => {
-            this.rawQuery(
-                queryStr,
-                queryValues,
-                (err, result? : MysqlUpdateResult) => {
-                    if (err == undefined) {
-                        if (result == undefined) {
-                            reject(new Error(`Expected a result`))
-                        } else {
-                            resolve(result);
-                        }
-                    } else {
-                        reject(err);
-                    }
-                }
-            );
-        });
+    ) {
+        return this.getDefaultConnection().rawUpdate(queryStr, queryValues);
     }
     public async updateAny<T extends QueryValues, ConditionT extends QueryValues> (
         table : string,
         row : T,
         condition : ConditionT
-    ) : Promise<UpdateResult<T, ConditionT>> {
-        const set = this.queryFormat(Database.ToSet(row), row);
-
-        if (set == "") {
-            return {
-                fieldCount   : 0,
-                affectedRows : -1, //-1 because we don't know
-                insertId     : 0,
-                serverStatus : 0,
-                warningCount : 1,
-                message      : "SET clause is empty; no updates occurred",
-                protocol41   : false,
-                changedRows  : 0,
-                row : row,
-                condition : condition,
-            };
-        }
-
-        let where = this.queryFormat(Database.ToWhereEquals(condition), condition);
-
-        if (where == "") {
-            where = "TRUE";
-        }
-
-        const queryStr = `
-            UPDATE
-                ${mysql.escapeId(table)}
-            SET
-                ${set}
-            WHERE
-                ${where}
-        `;
-
-        return this.rawUpdate(queryStr, {})
-            .then((result) => {
-                return {
-                    ...result,
-                    row : row,
-                    condition : condition,
-                };
-            });
+    ) {
+        return this.getDefaultConnection().updateAny(table, row, condition);
     }
     public async update<T extends QueryValues, ConditionT extends QueryValues> (
         assertRow       : sd.AssertFunc<T>,
@@ -430,217 +289,91 @@ export class Database {
         table : string,
         row : T,
         condition : ConditionT
-    ) : Promise<UpdateResult<T, ConditionT>> {
-        //Just to be safe
-        row       = sd.toAssertDelegateExact(assertRow)("update target", row);
-        condition = sd.toAssertDelegateExact(assertCondition)("update condition", condition);
-
-        return this.updateAny<T, ConditionT>(
-            table,
-            row,
-            condition
-        );
+    ) {
+        return this.getDefaultConnection().update(assertRow, assertCondition, table, row, condition);
     }
-    public async updateByNumberId<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T, id : number) : Promise<InsertResult<T>> {
-        return this.update(
-            assert,
-            Id,
-            table,
-            row,
-            {
-                id : id,
-            }
-        );
+    public async updateByNumberId<T extends QueryValues> (assert : sd.AssertFunc<T>, table : string, row : T, id : number) {
+        return this.getDefaultConnection().updateByNumberId(assert, table, row, id);
     }
-    public rawDelete (queryStr : string, queryValues? : QueryValues) : Promise<MysqlDeleteResult> {
-        return new Promise<MysqlDeleteResult>((resolve, reject) => {
-            this.rawQuery(
-                queryStr,
-                queryValues,
-                (err, results? : MysqlDeleteResult) => {
-                    if (err == undefined) {
-                        if (results == undefined) {
-                            reject(new Error(`Expected results`));
-                            return;
-                        }
-                        resolve(results);
-                    } else {
-                        reject(err);
-                    }
-                }
-            );
-        });
+    public rawDelete (queryStr : string, queryValues? : QueryValues) {
+        return this.getDefaultConnection().rawDelete(queryStr, queryValues);
     }
     //Too dangerous to call this without queryValues or with empty queryValues
     public delete (table : string, queryValues : QueryValues) {
-        if (Object.getOwnPropertyNames(queryValues).length == 0) {
-            throw new Error(`Expected at least one query value; if you want to delete everything, consider rawDelete`);
-        }
-        const queryStr = `
-            DELETE FROM
-                ${mysql.escapeId(table)}
-            WHERE
-                ${Database.ToWhereEquals(queryValues)}
-        `;
-        return this.rawDelete(queryStr, queryValues);
+        return this.getDefaultConnection().delete(table, queryValues);
     }
     public async getAny (queryStr : string, queryValues? : QueryValues) {
-        const result = await this.selectAny(
-            queryStr,
-            queryValues
-        );
-        if (result.rows.length == 0) {
-            return undefined;
-        }
-        if (result.rows.length != 1) {
-            throw new Error(`Expected 1 row, received ${result.rows.length}`);
-        }
-        if (result.fields.length != 1) {
-            throw new Error(`Expected one field, received ${result.fields.length}`);
-        }
-        const k = result.fields[0].name;
-        const value = result.rows[0][k];
-        return value;
+        return this.getDefaultConnection().getAny(queryStr, queryValues);
     }
     public async get<T> (assertion : sd.AssertDelegate<T>, queryStr : string, queryValues? : QueryValues) {
-        const anyValue = await this.getAny(queryStr, queryValues);
-        const value    = assertion("value", anyValue);
-        return value;
+        return this.getDefaultConnection().get(assertion, queryStr, queryValues);
     }
     public async getBoolean (queryStr : string, queryValues? : QueryValues) {
-        return this.get(sd.numberToBoolean(), queryStr, queryValues);
+        return this.getDefaultConnection().getBoolean(queryStr, queryValues);
     }
     public async getNumber (queryStr : string, queryValues? : QueryValues) {
-        return this.get(sd.number(), queryStr, queryValues);
+        return this.getDefaultConnection().getNumber(queryStr, queryValues);
     }
     public async getNaturalNumber (queryStr : string, queryValues? : QueryValues) {
-        return this.get(sd.naturalNumber(), queryStr, queryValues);
+        return this.getDefaultConnection().getNaturalNumber(queryStr, queryValues);
     }
     public async getString (queryStr : string, queryValues? : QueryValues) {
-        return this.get(sd.string(), queryStr, queryValues);
+        return this.getDefaultConnection().getString(queryStr, queryValues);
     }
     public async getDate (queryStr : string, queryValues? : QueryValues) {
-        return this.get(sd.date(), queryStr, queryValues);
+        return this.getDefaultConnection().getDate(queryStr, queryValues);
     }
     public async exists (table : string, queryValues : QueryValues) {
-        const queryStr = `
-            SELECT EXISTS (
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            )
-        `;
-        const result = await this.getBoolean(queryStr, queryValues);
-        return result;
+        return this.getDefaultConnection().exists(table, queryValues);
     }
     public async now () {
-        const result = await this.getDate("SELECT NOW()");
-        return result;
+        return this.getDefaultConnection().now();
     }
     public static Escape (raw : any, toUTCIfDate : boolean = false) {
-        if (raw instanceof Date && toUTCIfDate) {
-            const year  = zeroPad(raw.getUTCFullYear(), 4);
-            const month = zeroPad(raw.getUTCMonth()+1, 2);
-            const day   = zeroPad(raw.getUTCDate(), 2);
-
-            const hour   = zeroPad(raw.getUTCHours(), 2);
-            const minute = zeroPad(raw.getUTCMinutes(), 2);
-            const second = zeroPad(raw.getUTCSeconds(), 2);
-            const ms     = zeroPad(raw.getMilliseconds(), 3);
-
-            return mysql.escape(`${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`);
-        } else {
-            return mysql.escape(raw);
-        }
+        return util.escape(raw, toUTCIfDate);
     }
     public static EscapeId (raw : string) {
         return mysql.escapeId(raw);
     }
     public async getArrayAny (queryStr : string, queryValues? : QueryValues) {
-        const result = await this.selectAny(
-            queryStr,
-            queryValues
-        );
-        if (result.fields.length != 1) {
-            throw new Error(`Expected one field, received ${result.fields.length}`);
-        }
-        const k = result.fields[0].name;
-
-        const arr : any[] = [];
-        for (let row of result.rows) {
-            const value = row[k];
-            arr.push(value);
-        }
-        return arr;
+        return this.getDefaultConnection().getArrayAny(queryStr, queryValues);
     }
     public async getArray<T> (assertion : sd.AssertDelegate<T>, queryStr : string, queryValues? : QueryValues) {
-        const anyArr = await this.getArrayAny(queryStr, queryValues);
-        const arr    = sd.array(assertion)("array", anyArr);
-        return arr;
+        return this.getDefaultConnection().getArray(assertion, queryStr, queryValues);
     }
     public async getBooleanArray (queryStr : string, queryValues? : QueryValues) {
-        return this.getArray(sd.numberToBoolean(), queryStr, queryValues);
+        return this.getDefaultConnection().getBooleanArray(queryStr, queryValues);
     }
     public async getNumberArray (queryStr : string, queryValues? : QueryValues) {
-        return this.getArray(sd.number(), queryStr, queryValues);
+        return this.getDefaultConnection().getNumberArray(queryStr, queryValues);
     }
     public async getNaturalNumberArray (queryStr : string, queryValues? : QueryValues) {
-        return this.getArray(sd.naturalNumber(), queryStr, queryValues);
+        return this.getDefaultConnection().getNaturalNumberArray(queryStr, queryValues);
     }
     public async getStringArray (queryStr : string, queryValues? : QueryValues) {
-        return this.getArray(sd.string(), queryStr, queryValues);
+        return this.getDefaultConnection().getStringArray(queryStr, queryValues);
     }
     public async getDateArray (queryStr : string, queryValues? : QueryValues) {
-        return this.getArray(sd.date(), queryStr, queryValues);
+        return this.getDefaultConnection().getDateArray(queryStr, queryValues);
     }
+    //TODO Phase out
     public beginTransaction () {
-        return new Promise((resolve, reject) => {
-            this.connection.beginTransaction((err) => {
-                if (err == undefined) {
-                    resolve();
-                } else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().beginTransaction();
     }
+    //TODO Phase out
     public rollback () {
-        return new Promise((resolve, reject) => {
-            this.connection.rollback((err) => {
-                if (err == undefined) {
-                    resolve();
-                } else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().rollback();
     }
+    //TODO Phase out
     public commit () {
-        return new Promise((resolve, reject) => {
-            this.connection.commit((err) => {
-                if (err == undefined) {
-                    resolve();
-                } else {
-                    reject(err);
-                }
-            });
-        });
+        return this.getDefaultConnection().commit();
     }
 
     public getPaginationConfiguration () {
-        return {
-            ...this.paginationConfiguration
-        };
+        return this.getDefaultConnection().getPaginationConfiguration();
     }
     public setPaginationConfiguration (paginationConfiguration : PaginationConfiguration) {
-        this.paginationConfiguration = sd.toClassExact(
-            "paginationConfiguration",
-            paginationConfiguration,
-            PaginationConfiguration
-        );
+        return this.getDefaultConnection().setPaginationConfiguration(paginationConfiguration);
     }
 
     public async selectPaginated<T> (
@@ -648,73 +381,23 @@ export class Database {
         queryStr : string,
         queryValues? : QueryValues,
         rawPaginationArgs? : RawPaginationArgs
-    ) : Promise<SelectPaginatedResult<T>> {
-        const paginationArgs = toPaginationArgs(
-            TypeUtil.Coalesce<RawPaginationArgs>(
-                rawPaginationArgs,
-                {}
-            ),
-            this.paginationConfiguration
-        );
-
-        if (queryStr.indexOf("SQL_CALC_FOUND_ROWS") < 0) {
-            if (queryStr.indexOf(":__start") >= 0 || queryStr.indexOf(":__count") >= 0) {
-                throw new Error(`Cannot specify :__start, and :__count, reserved for pagination queries`);
-            }
-
-            queryStr = queryStr
-                .replace(`SELECT`, `SELECT SQL_CALC_FOUND_ROWS `)
-                .concat(` LIMIT :__start, :__count`);
-        } else {
-            if (queryStr.indexOf(":__start") < 0 || queryStr.indexOf(":__count") < 0) {
-                throw new Error(`You must specify both :__start, and :__count, for pagination queries since SQL_CALC_FOUND_ROWS was specified`);
-            }
-        }
-
-        const page = await this.select(
+    ) {
+        return this.getDefaultConnection().selectPaginated(
             assert,
             queryStr,
-            {
-                ...queryValues,
-                __start : getPaginationStart(paginationArgs),
-                __count : paginationArgs.itemsPerPage,
-            }
+            queryValues,
+            rawPaginationArgs
         );
-
-        const itemsFound = await this.getNumber(`SELECT FOUND_ROWS()`);
-        const pagesFound = (
-            Math.floor(itemsFound/paginationArgs.itemsPerPage) +
-            (
-                (itemsFound%paginationArgs.itemsPerPage == 0) ?
-                    0 : 1
-            )
-        );
-
-        return {
-            info : {
-                itemsFound : itemsFound,
-                pagesFound : pagesFound,
-                ...paginationArgs
-            },
-            page : page,
-        };
     }
 
     public async simpleSelectZeroOrOne<T> (
         assert      : sd.AssertFunc<T>,
         table       : string,
         queryValues : QueryValues = {}
-    ) : Promise<SelectZeroOrOneResult<T>> {
-        return this.selectZeroOrOne(
+    ) {
+        return this.getDefaultConnection().simpleSelectZeroOrOne(
             assert,
-            `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            `,
+            table,
             queryValues
         );
     }
@@ -722,17 +405,10 @@ export class Database {
         assert      : sd.AssertFunc<T>,
         table       : string,
         queryValues : QueryValues = {}
-    ) : Promise<SelectOneResult<T>> {
-        return this.selectOne(
+    ) {
+        return this.getDefaultConnection().simpleSelectOne(
             assert,
-            `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${Database.ToWhereEquals(queryValues)}
-            `,
+            table,
             queryValues
         );
     }
@@ -742,41 +418,29 @@ export class Database {
         orderBy     : OrderByItem[],
         queryValues : QueryValues = {},
         rawPaginationArgs? : RawPaginationArgs
-    ) : Promise<SelectPaginatedResult<T>> {
-        let where = Database.ToWhereEquals(queryValues);
-
-        if (where == "") {
-            where = "TRUE";
-        }
-        return this.selectPaginated(
+    ) {
+        return this.getDefaultConnection().simpleSelectPaginated(
             assert,
-            `
-                SELECT
-                    *
-                FROM
-                    ${mysql.escapeId(table)}
-                WHERE
-                    ${where}
-                ORDER BY
-                    ${Database.ToOrderBy(orderBy)}
-            `,
+            table,
+            orderBy,
             queryValues,
             rawPaginationArgs
         );
     }
-    public utcOnly () : Promise<void> {
-        return new Promise((resolve) => {
-            this.rawQuery(
-                "SET time_zone = :offset;",
-                {
-                    offset : "+00:00",
-                },
-                () => {
-                    this.connection.config.timezone = "Z";
-                    this.useUtcOnly = true;
-                    resolve();
-                }
-            );
-        });
+    public escape (raw : any) {
+        this.getDefaultConnection().escape(raw);
+    }
+
+    public async transaction (callback : (db : ConnectedDatabase) => Promise<void>) {
+        const allocated = new ConnectedDatabase(
+            this.useUtcOnly,
+            await this.allocatePoolConnection()
+        );
+        allocated.setPaginationConfiguration(this.getPaginationConfiguration());
+
+        await allocated.beginTransaction();
+        await callback(allocated);
+        await allocated.commit();
+        allocated.releaseConnection();
     }
 }
