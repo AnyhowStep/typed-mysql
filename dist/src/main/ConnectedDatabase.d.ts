@@ -121,4 +121,5 @@ export declare class ConnectedDatabase {
     simpleSelectOne<T>(assert: sd.AssertFunc<T>, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     simpleSelectPaginated<T>(assert: sd.AssertFunc<T>, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
     escape(raw: any): void;
+    isUtcOnly(): boolean;
 }

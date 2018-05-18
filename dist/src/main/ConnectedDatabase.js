@@ -546,6 +546,9 @@ class ConnectedDatabase {
     escape(raw) {
         util.escape(raw, this.useUtcOnly);
     }
+    isUtcOnly() {
+        return this.useUtcOnly;
+    }
 }
 exports.ConnectedDatabase = ConnectedDatabase;
 //# sourceMappingURL=ConnectedDatabase.js.map

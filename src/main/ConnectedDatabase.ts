@@ -667,4 +667,7 @@ export class ConnectedDatabase {
     public escape (raw : any) {
         util.escape(raw, this.useUtcOnly)
     }
+    public isUtcOnly () {
+        return this.useUtcOnly;
+    }
 }

@@ -87,5 +87,6 @@ export declare class Database {
     simpleSelectOne<T>(assert: sd.AssertFunc<T>, table: string, queryValues?: QueryValues): Promise<SelectOneResult<T>>;
     simpleSelectPaginated<T>(assert: sd.AssertFunc<T>, table: string, orderBy: OrderByItem[], queryValues?: QueryValues, rawPaginationArgs?: RawPaginationArgs): Promise<SelectPaginatedResult<T>>;
     escape(raw: any): void;
+    isUtcOnly(): boolean;
     transaction(callback: (db: ConnectedDatabase) => Promise<void>): Promise<void>;
 }

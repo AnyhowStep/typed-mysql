@@ -430,6 +430,9 @@ export class Database {
     public escape (raw : any) {
         this.getDefaultConnection().escape(raw);
     }
+    public isUtcOnly () {
+        return this.getDefaultConnection().isUtcOnly();
+    }
 
     public async transaction (callback : (db : ConnectedDatabase) => Promise<void>) {
         const allocated = new ConnectedDatabase(

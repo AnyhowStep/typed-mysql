@@ -403,6 +403,9 @@ class Database {
     escape(raw) {
         this.getDefaultConnection().escape(raw);
     }
+    isUtcOnly() {
+        return this.getDefaultConnection().isUtcOnly();
+    }
     transaction(callback) {
         return __awaiter(this, void 0, void 0, function* () {
             const allocated = new ConnectedDatabase_1.ConnectedDatabase(this.useUtcOnly, yield this.allocatePoolConnection());
