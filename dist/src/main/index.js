@@ -5,5 +5,8 @@ function __export(m) {
 Object.defineProperty(exports, "__esModule", { value: true });
 __export(require("./my-util"));
 __export(require("./pagination"));
+__export(require("./pool-util"));
+__export(require("./PooledDatabase"));
+__export(require("./SingletonAllocator"));
 __export(require("./UnsafeQuery"));
 //# sourceMappingURL=index.js.map
