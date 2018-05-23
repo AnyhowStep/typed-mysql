@@ -6,3 +6,4 @@ export * from "./PooledDatabase";
 export * from "./QueryValues";
 export * from "./SingletonAllocator";
 export * from "./UnsafeQuery";
+export {escapeId} from "mysql";

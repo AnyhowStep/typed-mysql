@@ -9,4 +9,6 @@ __export(require("./pool-util"));
 __export(require("./PooledDatabase"));
 __export(require("./SingletonAllocator"));
 __export(require("./UnsafeQuery"));
+var mysql_1 = require("mysql");
+exports.escapeId = mysql_1.escapeId;
 //# sourceMappingURL=index.js.map
