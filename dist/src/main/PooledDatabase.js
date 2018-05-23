@@ -50,6 +50,12 @@ class PooledDatabase {
             paginationConfiguration: Object.assign({}, data.paginationConfiguration),
         };
     }
+    getPool() {
+        return this.pool;
+    }
+    getData() {
+        return this.data;
+    }
     isUtcOnly() {
         return this.data.useUtcOnly;
     }

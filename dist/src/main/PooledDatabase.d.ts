@@ -76,6 +76,8 @@ export interface PooledDatabaseData {
 export declare class PooledDatabase {
     private readonly pool;
     private readonly data;
+    getPool(): mysql.Pool;
+    protected getData(): PooledDatabaseData;
     constructor(args: poolUtil.PoolArgs | mysql.Pool, data?: PooledDatabaseData);
     private readonly connection;
     isUtcOnly(): boolean;

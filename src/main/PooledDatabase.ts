@@ -91,6 +91,13 @@ export class PooledDatabase {
     private readonly pool : mysql.Pool;
     private readonly data : PooledDatabaseData;
 
+    public getPool () {
+        return this.pool;
+    }
+    protected getData () {
+        return this.data;
+    }
+
     public constructor (args : poolUtil.PoolArgs|mysql.Pool, data? : PooledDatabaseData) {
         this.pool = poolUtil.toPool(args);
         if (data == undefined) {
