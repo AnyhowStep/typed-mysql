@@ -20,14 +20,13 @@ class User {
 }
 
 async function main () {
-    const db = new Database({
+    const db = new PooledDatabase({
         host     : Configuration.MysqlHost(),
         database : Configuration.MysqlDatabase(),
         charset  : Configuration.MysqlCharset(),
         user     : Configuration.MysqlUser(),
         password : Configuration.MysqlPassword(),
     });
-    await db.connect();
 
     const user = await db.selectZeroOrOne(
         User,
