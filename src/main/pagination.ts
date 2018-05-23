@@ -53,3 +53,19 @@ export function toPaginationArgs (raw : RawPaginationArgs, configuration : Pagin
 export function getPaginationStart (args : PaginationArgs) : number {
     return args.page * args.itemsPerPage;
 }
+
+export function calculatePagesFound (args : PaginationArgs, itemsFound : number) {
+    if (itemsFound < 0) {
+        return 0;
+    }
+    if (args.itemsPerPage <= 0) {
+        return 0;
+    }
+    return (
+        Math.floor(itemsFound/args.itemsPerPage) +
+        (
+            (itemsFound%args.itemsPerPage == 0) ?
+                0 : 1
+        )
+    )
+}

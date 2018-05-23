@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const mysql = require("mysql");
+const UnsafeQuery_1 = require("./UnsafeQuery");
 function zeroPad(n, length) {
     n = n.toString();
     while (n.length < length) {
@@ -83,4 +84,44 @@ function escape(raw, toUTCIfDate = false) {
     }
 }
 exports.escape = escape;
+function insertUnsafeQueries(query, values) {
+    if (values == undefined) {
+        return query;
+    }
+    const newQuery = query.replace(/\:(\w+)/g, (substring, key) => {
+        if (values.hasOwnProperty(key)) {
+            const raw = values[key];
+            if (raw instanceof UnsafeQuery_1.UnsafeQuery) {
+                return raw.value;
+            }
+            else {
+                return substring;
+            }
+        }
+        throw new Error(`Expected a value for ${key} in query`);
+    });
+    if (newQuery == query) {
+        return newQuery;
+    }
+    else {
+        return insertUnsafeQueries(newQuery, values);
+    }
+}
+exports.insertUnsafeQueries = insertUnsafeQueries;
+function createQueryFormatDelegate(useUtcOnly) {
+    return (query, values) => {
+        if (values == undefined) {
+            return query;
+        }
+        query = insertUnsafeQueries(query, values);
+        const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
+            if (values.hasOwnProperty(key)) {
+                return escape(values[key], useUtcOnly);
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        return newQuery;
+    };
+}
+exports.createQueryFormatDelegate = createQueryFormatDelegate;
 //# sourceMappingURL=my-util.js.map

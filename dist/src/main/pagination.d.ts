@@ -15,3 +15,4 @@ export interface PaginationArgs {
 }
 export declare function toPaginationArgs(raw: RawPaginationArgs, configuration: PaginationConfiguration): PaginationArgs;
 export declare function getPaginationStart(args: PaginationArgs): number;
+export declare function calculatePagesFound(args: PaginationArgs, itemsFound: number): number;

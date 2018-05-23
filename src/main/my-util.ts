@@ -1,6 +1,7 @@
 import * as mysql from "mysql";
 import {QueryValues} from "./QueryValues";
 import {OrderByItem} from "./OrderByItem";
+import {UnsafeQuery} from "./UnsafeQuery";
 
 export function zeroPad (n : number|string, length : number) {
     n = n.toString();
@@ -78,4 +79,42 @@ export function escape (raw : any, toUTCIfDate : boolean = false) {
     } else {
         return mysql.escape(raw);
     }
+}
+
+
+export function insertUnsafeQueries (query : string, values : any) : string {
+    if (values == undefined) {
+        return query;
+    }
+    const newQuery = query.replace(/\:(\w+)/g, (substring : string, key : string) => {
+        if (values.hasOwnProperty(key)) {
+            const raw = values[key];
+            if (raw instanceof UnsafeQuery) {
+                return raw.value;
+            } else {
+                return substring;
+            }
+        }
+        throw new Error(`Expected a value for ${key} in query`);
+    });
+    if (newQuery == query) {
+        return newQuery;
+    } else {
+        return insertUnsafeQueries(newQuery, values);
+    }
+}
+export function createQueryFormatDelegate (useUtcOnly : boolean) {
+    return (query : string, values : any) : string => {
+        if (values == undefined) {
+            return query;
+        }
+        query = insertUnsafeQueries(query, values);
+        const newQuery = query.replace(/\:(\w+)/g, (_substring : string, key : string) => {
+            if (values.hasOwnProperty(key)) {
+                return escape(values[key], useUtcOnly);
+            }
+            throw new Error(`Expected a value for ${key} in query`);
+        });
+        return newQuery;
+    };
 }

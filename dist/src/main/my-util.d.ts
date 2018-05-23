@@ -11,3 +11,5 @@ export declare function toInsert(queryValues: QueryValues): {
     keys: string;
 };
 export declare function escape(raw: any, toUTCIfDate?: boolean): string;
+export declare function insertUnsafeQueries(query: string, values: any): string;
+export declare function createQueryFormatDelegate(useUtcOnly: boolean): (query: string, values: any) => string;

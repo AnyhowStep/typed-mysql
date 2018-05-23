@@ -69,4 +69,16 @@ function getPaginationStart(args) {
     return args.page * args.itemsPerPage;
 }
 exports.getPaginationStart = getPaginationStart;
+function calculatePagesFound(args, itemsFound) {
+    if (itemsFound < 0) {
+        return 0;
+    }
+    if (args.itemsPerPage <= 0) {
+        return 0;
+    }
+    return (Math.floor(itemsFound / args.itemsPerPage) +
+        ((itemsFound % args.itemsPerPage == 0) ?
+            0 : 1));
+}
+exports.calculatePagesFound = calculatePagesFound;
 //# sourceMappingURL=pagination.js.map
