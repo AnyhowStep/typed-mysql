@@ -98,7 +98,8 @@ function insertUnsafeQueries(query, values) {
                 return substring;
             }
         }
-        throw new Error(`Expected a value for ${key} in query`);
+        return substring;
+        //throw new Error(`Expected a value for ${key} in query`);
     });
     if (newQuery == query) {
         return newQuery;
@@ -114,11 +115,12 @@ function createQueryFormatDelegate(useUtcOnly) {
             return query;
         }
         query = insertUnsafeQueries(query, values);
-        const newQuery = query.replace(/\:(\w+)/g, (_substring, key) => {
+        const newQuery = query.replace(/\:(\w+)/g, (substring, key) => {
             if (values.hasOwnProperty(key)) {
                 return escape(values[key], useUtcOnly);
             }
-            throw new Error(`Expected a value for ${key} in query`);
+            return substring;
+            //throw new Error(`Expected a value for ${key} in query`);
         });
         return newQuery;
     };
