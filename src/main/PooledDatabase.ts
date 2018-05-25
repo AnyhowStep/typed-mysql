@@ -489,14 +489,15 @@ export class PooledDatabase {
     }
     //A shortcut to begin, and commit transactions.
     //Perform all your transactional queries in the callback.
-    public async transaction (callback : (db : PooledDatabase) => Promise<void>) {
+    public async transaction<ResultT> (callback : (db : PooledDatabase) => Promise<ResultT>) : Promise<ResultT> {
         const allocated = this.allocate();
 
         await allocated.beginTransaction();
-        await callback(allocated)
-            .then(async () => {
+        return callback(allocated)
+            .then(async (result) => {
                 await allocated.commit();
                 allocated.freeConnection();
+                return result;
             })
             .catch(async (err) => {
                 await allocated.rollback();

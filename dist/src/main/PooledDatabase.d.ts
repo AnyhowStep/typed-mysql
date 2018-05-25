@@ -118,7 +118,7 @@ export declare class PooledDatabase {
     beginTransaction(): Promise<{}>;
     rollback(): Promise<{}>;
     commit(): Promise<{}>;
-    transaction(callback: (db: PooledDatabase) => Promise<void>): Promise<void>;
+    transaction<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
     getPaginationConfiguration(): {
         defaultPage: number;
         maxItemsPerPage: number;

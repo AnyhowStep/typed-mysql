@@ -424,10 +424,11 @@ class PooledDatabase {
         return __awaiter(this, void 0, void 0, function* () {
             const allocated = this.allocate();
             yield allocated.beginTransaction();
-            yield callback(allocated)
-                .then(() => __awaiter(this, void 0, void 0, function* () {
+            return callback(allocated)
+                .then((result) => __awaiter(this, void 0, void 0, function* () {
                 yield allocated.commit();
                 allocated.freeConnection();
+                return result;
             }))
                 .catch((err) => __awaiter(this, void 0, void 0, function* () {
                 yield allocated.rollback();
