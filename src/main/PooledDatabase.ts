@@ -126,7 +126,7 @@ export class PooledDatabase {
     public async utcOnly () : Promise<void> {
         this.data.useUtcOnly = true;
         if (!this.connection.isFree()) {
-            this.connection.free();
+            this.freeConnection();
         }
         await this.connection.getOrAllocate();
     }
@@ -145,6 +145,7 @@ export class PooledDatabase {
         return this.connection.isFree();
     }
     public freeConnection () {
+        this.inTransaction = false;
         return this.connection.free();
     }
 
@@ -445,12 +446,20 @@ export class PooledDatabase {
     }
 
     //Transaction
+    private inTransaction = false;
+    public isInTransaction () {
+        return this.inTransaction;
+    }
     public beginTransaction () {
+        if (this.inTransaction) {
+            throw new Error(`Transaction already started`);
+        }
         return this.getOrAllocateConnection()
             .then((connection) => {
                 return new Promise((resolve, reject) => {
                     connection.beginTransaction((err) => {
                         if (err == undefined) {
+                            this.inTransaction = true;
                             resolve();
                         } else {
                             reject(err);
@@ -465,6 +474,7 @@ export class PooledDatabase {
                 return new Promise((resolve, reject) => {
                     connection.rollback((err) => {
                         if (err == undefined) {
+                            this.inTransaction = false;
                             resolve();
                         } else {
                             reject(err);
@@ -479,6 +489,7 @@ export class PooledDatabase {
                 return new Promise((resolve, reject) => {
                     connection.commit((err) => {
                         if (err == undefined) {
+                            this.inTransaction = false;
                             resolve();
                         } else {
                             reject(err);

@@ -38,6 +38,8 @@ class PooledDatabase {
             }
             return result;
         });
+        //Transaction
+        this.inTransaction = false;
         this.pool = poolUtil.toPool(args);
         if (data == undefined) {
             data = {
@@ -63,7 +65,7 @@ class PooledDatabase {
         return __awaiter(this, void 0, void 0, function* () {
             this.data.useUtcOnly = true;
             if (!this.connection.isFree()) {
-                this.connection.free();
+                this.freeConnection();
             }
             yield this.connection.getOrAllocate();
         });
@@ -82,6 +84,7 @@ class PooledDatabase {
         return this.connection.isFree();
     }
     freeConnection() {
+        this.inTransaction = false;
         return this.connection.free();
     }
     //Allocates a new PooledDatabase
@@ -372,13 +375,19 @@ class PooledDatabase {
             return this.selectValueArray(sd.date(), queryStr, queryValues);
         });
     }
-    //Transaction
+    isInTransaction() {
+        return this.inTransaction;
+    }
     beginTransaction() {
+        if (this.inTransaction) {
+            throw new Error(`Transaction already started`);
+        }
         return this.getOrAllocateConnection()
             .then((connection) => {
             return new Promise((resolve, reject) => {
                 connection.beginTransaction((err) => {
                     if (err == undefined) {
+                        this.inTransaction = true;
                         resolve();
                     }
                     else {
@@ -394,6 +403,7 @@ class PooledDatabase {
             return new Promise((resolve, reject) => {
                 connection.rollback((err) => {
                     if (err == undefined) {
+                        this.inTransaction = false;
                         resolve();
                     }
                     else {
@@ -409,6 +419,7 @@ class PooledDatabase {
             return new Promise((resolve, reject) => {
                 connection.commit((err) => {
                     if (err == undefined) {
+                        this.inTransaction = false;
                         resolve();
                     }
                     else {

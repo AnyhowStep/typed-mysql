@@ -115,6 +115,8 @@ export declare class PooledDatabase {
     selectNaturalNumberArray(queryStr: string, queryValues?: QueryValues): Promise<void>;
     selectStringArray(queryStr: string, queryValues?: QueryValues): Promise<void>;
     selectDateArray(queryStr: string, queryValues?: QueryValues): Promise<void>;
+    private inTransaction;
+    isInTransaction(): boolean;
     beginTransaction(): Promise<{}>;
     rollback(): Promise<{}>;
     commit(): Promise<{}>;
