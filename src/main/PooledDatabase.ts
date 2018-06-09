@@ -159,7 +159,7 @@ export class PooledDatabase {
             this.data
         );
     }
-    private acquiredTemporary = false;
+    protected acquiredTemporary = false;
     public isAcquiredTemporary () {
         return this.acquiredTemporary;
     }

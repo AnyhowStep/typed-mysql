@@ -88,7 +88,7 @@ export declare class PooledDatabase {
     isConnectionFree(): boolean;
     freeConnection(): void;
     allocate(): PooledDatabase;
-    private acquiredTemporary;
+    protected acquiredTemporary: boolean;
     isAcquiredTemporary(): boolean;
     acquire<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
     acquireIfNotTemporary<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
