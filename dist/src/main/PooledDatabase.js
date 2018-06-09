@@ -25,19 +25,21 @@ class PooledDatabase {
                 resource.release();
             }
         });
+        this.acquiredTemporary = false;
         //Requires that a connection is already allocated
-        this.queryFormat = (query, values) => __awaiter(this, void 0, void 0, function* () {
-            const connection = yield this.getOrAllocateConnection();
-            const queryFormat = connection.config.queryFormat;
-            if (queryFormat == undefined) {
-                throw new Error(`Could not get queryFormat() of connection`);
-            }
-            const result = queryFormat(query, values);
-            if (typeof result != "string") {
-                throw new Error(`Expected queryFormat result to be a string, received ${typeof result}`);
-            }
-            return result;
-        });
+        this.queryFormat = (query, values) => {
+            return this.getOrAllocateConnectionTemporary((connection) => {
+                const queryFormat = connection.config.queryFormat;
+                if (queryFormat == undefined) {
+                    throw new Error(`Could not get queryFormat() of connection`);
+                }
+                const result = queryFormat(query, values);
+                if (typeof result != "string") {
+                    throw new Error(`Expected queryFormat result to be a string, received ${typeof result}`);
+                }
+                return Promise.resolve(result);
+            });
+        };
         //Transaction
         this.inTransaction = false;
         this.pool = poolUtil.toPool(args);
@@ -84,16 +86,71 @@ class PooledDatabase {
         return this.connection.isFree();
     }
     freeConnection() {
-        this.inTransaction = false;
+        if (this.inTransaction) {
+            console.warn("Attempted to free connection before performing commit/rollback on transaction");
+            this.rollback();
+        }
         return this.connection.free();
     }
     //Allocates a new PooledDatabase
     allocate() {
         return new PooledDatabase(this.pool, this.data);
     }
-    rawQuery(queryStr, queryValues) {
+    isAcquiredTemporary() {
+        return this.acquiredTemporary;
+    }
+    //A shortcut to allocate, and free connections.
+    //Perform all your queries in the callback.
+    acquire(callback) {
         return __awaiter(this, void 0, void 0, function* () {
-            const connection = yield this.getOrAllocateConnection();
+            const allocated = this.allocate();
+            //Temporary because we'll automatically free it
+            allocated.acquiredTemporary = true;
+            return callback(allocated)
+                .then((result) => {
+                allocated.freeConnection();
+                allocated.acquiredTemporary = false;
+                return result;
+            })
+                .catch((err) => {
+                allocated.freeConnection();
+                allocated.acquiredTemporary = false;
+                throw err;
+            });
+        });
+    }
+    acquireIfNotTemporary(callback) {
+        if (this.isAcquiredTemporary()) {
+            return callback(this);
+        }
+        else {
+            return this.acquire(callback);
+        }
+    }
+    //If is `acquiredTemporary`, then call `getOrAllocateConnection()`
+    //Otherwise, call `getOrAllocateConnection()` and then call `freeConnection()` after
+    getOrAllocateConnectionTemporary(callback) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.acquiredTemporary) {
+                const connection = yield this.getOrAllocateConnection();
+                return callback(connection);
+            }
+            else {
+                const connection = yield this.getOrAllocateConnection();
+                return callback(connection)
+                    .then((result) => {
+                    this.freeConnection();
+                    return result;
+                })
+                    .catch((err) => {
+                    this.freeConnection();
+                    throw err;
+                });
+            }
+        });
+    }
+    rawQuery(queryStr, queryValues) {
+        return this.getOrAllocateConnectionTemporary((connection) => {
             return new Promise((resolve, reject) => {
                 const query = connection.query(queryStr, queryValues, (err, results, fields) => {
                     if (err != undefined) {
@@ -382,6 +439,9 @@ class PooledDatabase {
         if (this.inTransaction) {
             throw new Error(`Transaction already started`);
         }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot start a transaction unless inside of acquire()`);
+        }
         return this.getOrAllocateConnection()
             .then((connection) => {
             return new Promise((resolve, reject) => {
@@ -398,34 +458,42 @@ class PooledDatabase {
         });
     }
     rollback() {
-        return this.getOrAllocateConnection()
-            .then((connection) => {
-            return new Promise((resolve, reject) => {
-                connection.rollback((err) => {
-                    if (err == undefined) {
-                        this.inTransaction = false;
-                        resolve();
-                    }
-                    else {
-                        reject(err);
-                    }
-                });
+        if (!this.inTransaction) {
+            throw new Error(`Not in transaction; cannot rollback`);
+        }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot rollback a transaction unless inside of acquire()`);
+        }
+        const connection = this.getConnectionOrError();
+        return new Promise((resolve, reject) => {
+            connection.rollback((err) => {
+                if (err == undefined) {
+                    this.inTransaction = false;
+                    resolve();
+                }
+                else {
+                    reject(err);
+                }
             });
         });
     }
     commit() {
-        return this.getOrAllocateConnection()
-            .then((connection) => {
-            return new Promise((resolve, reject) => {
-                connection.commit((err) => {
-                    if (err == undefined) {
-                        this.inTransaction = false;
-                        resolve();
-                    }
-                    else {
-                        reject(err);
-                    }
-                });
+        if (!this.inTransaction) {
+            throw new Error(`Not in transaction; cannot commit`);
+        }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot commit a transaction unless inside of acquire()`);
+        }
+        const connection = this.getConnectionOrError();
+        return new Promise((resolve, reject) => {
+            connection.commit((err) => {
+                if (err == undefined) {
+                    this.inTransaction = false;
+                    resolve();
+                }
+                else {
+                    reject(err);
+                }
             });
         });
     }
@@ -433,20 +501,27 @@ class PooledDatabase {
     //Perform all your transactional queries in the callback.
     transaction(callback) {
         return __awaiter(this, void 0, void 0, function* () {
-            const allocated = this.allocate();
-            yield allocated.beginTransaction();
-            return callback(allocated)
-                .then((result) => __awaiter(this, void 0, void 0, function* () {
-                yield allocated.commit();
-                allocated.freeConnection();
-                return result;
-            }))
-                .catch((err) => __awaiter(this, void 0, void 0, function* () {
-                yield allocated.rollback();
-                allocated.freeConnection();
-                throw err;
+            return this.acquire((allocated) => __awaiter(this, void 0, void 0, function* () {
+                yield allocated.beginTransaction();
+                return callback(allocated)
+                    .then((result) => __awaiter(this, void 0, void 0, function* () {
+                    yield allocated.commit();
+                    return result;
+                }))
+                    .catch((err) => __awaiter(this, void 0, void 0, function* () {
+                    yield allocated.rollback();
+                    throw err;
+                }));
             }));
         });
+    }
+    transactionIfNotInOne(callback) {
+        if (this.isInTransaction()) {
+            return callback(this);
+        }
+        else {
+            return this.transaction(callback);
+        }
     }
     //Pagination
     getPaginationConfiguration() {
@@ -474,14 +549,15 @@ class PooledDatabase {
             //We allocate a new connection because `SELECT FOUND_ROWS()`
             //is bound to the connection, it may be "polluted" by
             //other queries if we use the current connection
-            const allocated = this.allocate();
-            const page = yield allocated.selectAll(assert, queryStr, Object.assign({}, queryValues, { __start: pagination_1.getPaginationStart(paginationArgs), __count: paginationArgs.itemsPerPage }));
-            const itemsFound = yield allocated.selectNaturalNumber(`SELECT FOUND_ROWS()`);
-            const pagesFound = pagination_1.calculatePagesFound(paginationArgs, itemsFound);
-            return {
-                info: Object.assign({}, paginationArgs, { itemsFound: itemsFound, pagesFound: pagesFound, fields: page.fields }),
-                rows: page.rows,
-            };
+            return this.acquire((allocated) => __awaiter(this, void 0, void 0, function* () {
+                const page = yield allocated.selectAll(assert, queryStr, Object.assign({}, queryValues, { __start: pagination_1.getPaginationStart(paginationArgs), __count: paginationArgs.itemsPerPage }));
+                const itemsFound = yield allocated.selectNaturalNumber(`SELECT FOUND_ROWS()`);
+                const pagesFound = pagination_1.calculatePagesFound(paginationArgs, itemsFound);
+                return {
+                    info: Object.assign({}, paginationArgs, { itemsFound: itemsFound, pagesFound: pagesFound, fields: page.fields }),
+                    rows: page.rows,
+                };
+            }));
         });
     }
     simpleSelectPaginated(assert, table, orderBy, queryValues = {}, rawPaginationArgs) {

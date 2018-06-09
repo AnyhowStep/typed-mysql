@@ -145,7 +145,10 @@ export class PooledDatabase {
         return this.connection.isFree();
     }
     public freeConnection () {
-        this.inTransaction = false;
+        if (this.inTransaction) {
+            console.warn("Attempted to free connection before performing commit/rollback on transaction")
+            this.rollback();
+        }
         return this.connection.free();
     }
 
@@ -156,38 +159,90 @@ export class PooledDatabase {
             this.data
         );
     }
+    private acquiredTemporary = false;
+    public isAcquiredTemporary () {
+        return this.acquiredTemporary;
+    }
+    //A shortcut to allocate, and free connections.
+    //Perform all your queries in the callback.
+    public async acquire<ResultT> (callback : (db : PooledDatabase) => Promise<ResultT>) : Promise<ResultT> {
+        const allocated = this.allocate();
+        //Temporary because we'll automatically free it
+        allocated.acquiredTemporary = true;
+
+        return callback(allocated)
+            .then((result) => {
+                allocated.freeConnection();
+                allocated.acquiredTemporary = false;
+                return result;
+            })
+            .catch((err) => {
+                allocated.freeConnection();
+                allocated.acquiredTemporary = false;
+                throw err;
+            });
+    }
+    public acquireIfNotTemporary<ResultT> (callback : (db : PooledDatabase) => Promise<ResultT>) : Promise<ResultT> {
+        if (this.isAcquiredTemporary()) {
+            return callback(this);
+        } else {
+            return this.acquire(callback);
+        }
+    }
+
+    //If is `acquiredTemporary`, then call `getOrAllocateConnection()`
+    //Otherwise, call `getOrAllocateConnection()` and then call `freeConnection()` after
+    public async getOrAllocateConnectionTemporary<ResultT> (callback : (connection : mysql.PoolConnection) => Promise<ResultT>) : Promise<ResultT> {
+        if (this.acquiredTemporary) {
+            const connection = await this.getOrAllocateConnection();
+            return callback(connection);
+        } else {
+            const connection = await this.getOrAllocateConnection();
+            return callback(connection)
+                .then((result) => {
+                    this.freeConnection();
+                    return result;
+                })
+                .catch((err) => {
+                    this.freeConnection();
+                    throw err;
+                });
+        }
+    }
 
     //Requires that a connection is already allocated
-    public readonly queryFormat = async (query : string, values : any) : Promise<string> => {
-        const connection = await this.getOrAllocateConnection();
-        const queryFormat = connection.config.queryFormat;
-        if (queryFormat == undefined) {
-            throw new Error(`Could not get queryFormat() of connection`);
-        }
-        const result = queryFormat(query, values);
-        if (typeof result != "string") {
-            throw new Error(`Expected queryFormat result to be a string, received ${typeof result}`);
-        }
-        return result;
+    public readonly queryFormat = (query : string, values : any) : Promise<string> => {
+        return this.getOrAllocateConnectionTemporary((connection) => {
+            const queryFormat = connection.config.queryFormat;
+            if (queryFormat == undefined) {
+                throw new Error(`Could not get queryFormat() of connection`);
+            }
+            const result = queryFormat(query, values);
+            if (typeof result != "string") {
+                throw new Error(`Expected queryFormat result to be a string, received ${typeof result}`);
+            }
+            return Promise.resolve<string>(result);
+        });
     };
-    public async rawQuery (queryStr : string, queryValues : QueryValues|undefined) : Promise<RawQueryResult> {
-        const connection = await this.getOrAllocateConnection();
-        return new Promise<RawQueryResult>((resolve, reject) => {
-            const query = connection.query(
-                queryStr,
-                queryValues,
-                (err, results, fields) => {
-                    if (err != undefined) {
-                        reject(err);
-                        return;
+    public rawQuery (queryStr : string, queryValues : QueryValues|undefined) : Promise<RawQueryResult> {
+        return this.getOrAllocateConnectionTemporary((connection) => {
+            return new Promise<RawQueryResult>((resolve, reject) => {
+                const query = connection.query(
+                    queryStr,
+                    queryValues,
+                    (err, results, fields) => {
+                        if (err != undefined) {
+                            reject(err);
+                            return;
+                        }
+                        resolve({
+                            query : query,
+                            results : results,
+                            fields : fields
+                        });
                     }
-                    resolve({
-                        query : query,
-                        results : results,
-                        fields : fields
-                    });
-                }
-            )
+                )
+            });
         });
     }
     public selectAllAny (queryStr : string, queryValues? : QueryValues) : Promise<SelectResult<any>> {
@@ -454,6 +509,9 @@ export class PooledDatabase {
         if (this.inTransaction) {
             throw new Error(`Transaction already started`);
         }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot start a transaction unless inside of acquire()`);
+        }
         return this.getOrAllocateConnection()
             .then((connection) => {
                 return new Promise((resolve, reject) => {
@@ -469,52 +527,65 @@ export class PooledDatabase {
             });
     }
     public rollback () {
-        return this.getOrAllocateConnection()
-            .then((connection) => {
-                return new Promise((resolve, reject) => {
-                    connection.rollback((err) => {
-                        if (err == undefined) {
-                            this.inTransaction = false;
-                            resolve();
-                        } else {
-                            reject(err);
-                        }
-                    })
-                });
-            });
+        if (!this.inTransaction) {
+            throw new Error(`Not in transaction; cannot rollback`);
+        }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot rollback a transaction unless inside of acquire()`);
+        }
+        const connection = this.getConnectionOrError()
+        return new Promise((resolve, reject) => {
+            connection.rollback((err) => {
+                if (err == undefined) {
+                    this.inTransaction = false;
+                    resolve();
+                } else {
+                    reject(err);
+                }
+            })
+        });
     }
     public commit () {
-        return this.getOrAllocateConnection()
-            .then((connection) => {
-                return new Promise((resolve, reject) => {
-                    connection.commit((err) => {
-                        if (err == undefined) {
-                            this.inTransaction = false;
-                            resolve();
-                        } else {
-                            reject(err);
-                        }
-                    })
-                });
-            });
+        if (!this.inTransaction) {
+            throw new Error(`Not in transaction; cannot commit`);
+        }
+        if (!this.acquiredTemporary) {
+            throw new Error(`Cannot commit a transaction unless inside of acquire()`);
+        }
+        const connection = this.getConnectionOrError()
+        return new Promise((resolve, reject) => {
+            connection.commit((err) => {
+                if (err == undefined) {
+                    this.inTransaction = false;
+                    resolve();
+                } else {
+                    reject(err);
+                }
+            })
+        });
     }
     //A shortcut to begin, and commit transactions.
     //Perform all your transactional queries in the callback.
     public async transaction<ResultT> (callback : (db : PooledDatabase) => Promise<ResultT>) : Promise<ResultT> {
-        const allocated = this.allocate();
-
-        await allocated.beginTransaction();
-        return callback(allocated)
-            .then(async (result) => {
-                await allocated.commit();
-                allocated.freeConnection();
-                return result;
-            })
-            .catch(async (err) => {
-                await allocated.rollback();
-                allocated.freeConnection();
-                throw err;
-            });
+        return this.acquire(async (allocated) => {
+            await allocated.beginTransaction();
+            return callback(allocated)
+                .then(async (result) => {
+                    await allocated.commit();
+                    return result;
+                })
+                .catch(async (err) => {
+                    await allocated.rollback();
+                    throw err;
+                });
+        });
+    }
+    public transactionIfNotInOne<ResultT> (callback : (db : PooledDatabase) => Promise<ResultT>) : Promise<ResultT> {
+        if (this.isInTransaction()) {
+            return callback(this);
+        } else {
+            return this.transaction(callback);
+        }
     }
 
     //Pagination
@@ -560,29 +631,29 @@ export class PooledDatabase {
         //We allocate a new connection because `SELECT FOUND_ROWS()`
         //is bound to the connection, it may be "polluted" by
         //other queries if we use the current connection
-        const allocated = this.allocate();
+        return this.acquire(async (allocated) => {
+            const page = await allocated.selectAll(
+                assert,
+                queryStr,
+                {
+                    ...queryValues,
+                    __start : getPaginationStart(paginationArgs),
+                    __count : paginationArgs.itemsPerPage,
+                }
+            );
+            const itemsFound = await allocated.selectNaturalNumber(`SELECT FOUND_ROWS()`);
+            const pagesFound = calculatePagesFound(paginationArgs, itemsFound);
 
-        const page = await allocated.selectAll(
-            assert,
-            queryStr,
-            {
-                ...queryValues,
-                __start : getPaginationStart(paginationArgs),
-                __count : paginationArgs.itemsPerPage,
-            }
-        );
-        const itemsFound = await allocated.selectNaturalNumber(`SELECT FOUND_ROWS()`);
-        const pagesFound = calculatePagesFound(paginationArgs, itemsFound);
-
-        return {
-            info : {
-                ...paginationArgs,
-                itemsFound : itemsFound,
-                pagesFound : pagesFound,
-                fields : page.fields,
-            },
-            rows : page.rows,
-        };
+            return {
+                info : {
+                    ...paginationArgs,
+                    itemsFound : itemsFound,
+                    pagesFound : pagesFound,
+                    fields : page.fields,
+                },
+                rows : page.rows,
+            };
+        });
     }
     public async simpleSelectPaginated<T> (
         assert      : sd.AssertFunc<T>,

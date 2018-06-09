@@ -88,6 +88,11 @@ export declare class PooledDatabase {
     isConnectionFree(): boolean;
     freeConnection(): void;
     allocate(): PooledDatabase;
+    private acquiredTemporary;
+    isAcquiredTemporary(): boolean;
+    acquire<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
+    acquireIfNotTemporary<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
+    getOrAllocateConnectionTemporary<ResultT>(callback: (connection: mysql.PoolConnection) => Promise<ResultT>): Promise<ResultT>;
     readonly queryFormat: (query: string, values: any) => Promise<string>;
     rawQuery(queryStr: string, queryValues: QueryValues | undefined): Promise<RawQueryResult>;
     selectAllAny(queryStr: string, queryValues?: QueryValues): Promise<SelectResult<any>>;
@@ -121,6 +126,7 @@ export declare class PooledDatabase {
     rollback(): Promise<{}>;
     commit(): Promise<{}>;
     transaction<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
+    transactionIfNotInOne<ResultT>(callback: (db: PooledDatabase) => Promise<ResultT>): Promise<ResultT>;
     getPaginationConfiguration(): {
         defaultPage: number;
         maxItemsPerPage: number;

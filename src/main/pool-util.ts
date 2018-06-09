@@ -37,23 +37,27 @@ export function allocatePoolConnection (pool : mysql.Pool, useUtcOnly : boolean)
                 reject(err);
                 return;
             }
-            //TODO Check if each connection shares the same config object?
             connection.config.queryFormat = createQueryFormatDelegate(useUtcOnly);
             if (useUtcOnly) {
-                connection.query(
-                    "SET time_zone = :offset;",
-                    {
-                        offset : "+00:00",
-                    },
-                    (err) => {
-                        if (err != undefined) {
-                            reject(err);
-                            return;
+                //TODO Check if this condition is enough to not need to set time_zone
+                if (connection.config.timezone == "Z") {
+                    resolve(connection);
+                } else {
+                    connection.query(
+                        "SET time_zone = :offset;",
+                        {
+                            offset : "+00:00",
+                        },
+                        (err) => {
+                            if (err != undefined) {
+                                reject(err);
+                                return;
+                            }
+                            connection.config.timezone = "Z";
+                            resolve(connection);
                         }
-                        connection.config.timezone = "Z";
-                        resolve(connection);
-                    }
-                );
+                    );
+                }
             } else {
                 resolve(connection);
             }
