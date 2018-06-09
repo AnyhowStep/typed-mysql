@@ -172,12 +172,16 @@ export class PooledDatabase {
 
         return callback(allocated)
             .then((result) => {
-                allocated.freeConnection();
+                if (!allocated.connection.isFree()) {
+                    allocated.freeConnection();
+                }
                 allocated.acquiredTemporary = false;
                 return result;
             })
             .catch((err) => {
-                allocated.freeConnection();
+                if (!allocated.connection.isFree()) {
+                    allocated.freeConnection();
+                }
                 allocated.acquiredTemporary = false;
                 throw err;
             });
@@ -193,21 +197,10 @@ export class PooledDatabase {
     //If is `acquiredTemporary`, then call `getOrAllocateConnection()`
     //Otherwise, call `getOrAllocateConnection()` and then call `freeConnection()` after
     public async getOrAllocateConnectionTemporary<ResultT> (callback : (connection : mysql.PoolConnection) => Promise<ResultT>) : Promise<ResultT> {
-        if (this.acquiredTemporary) {
-            const connection = await this.getOrAllocateConnection();
+        return this.acquireIfNotTemporary(async (db) => {
+            const connection = await db.getOrAllocateConnection();
             return callback(connection);
-        } else {
-            const connection = await this.getOrAllocateConnection();
-            return callback(connection)
-                .then((result) => {
-                    this.freeConnection();
-                    return result;
-                })
-                .catch((err) => {
-                    this.freeConnection();
-                    throw err;
-                });
-        }
+        });
     }
 
     //Requires that a connection is already allocated

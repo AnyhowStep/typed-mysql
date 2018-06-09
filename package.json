@@ -1,6 +1,6 @@
 {
   "name": "typed-mysql",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Uses schema-decorator to enforce type-correctness",
   "main": "dist/src/main/index.js",
   "types": "dist/src/main/index.d.ts",

@@ -108,12 +108,16 @@ class PooledDatabase {
             allocated.acquiredTemporary = true;
             return callback(allocated)
                 .then((result) => {
-                allocated.freeConnection();
+                if (!allocated.connection.isFree()) {
+                    allocated.freeConnection();
+                }
                 allocated.acquiredTemporary = false;
                 return result;
             })
                 .catch((err) => {
-                allocated.freeConnection();
+                if (!allocated.connection.isFree()) {
+                    allocated.freeConnection();
+                }
                 allocated.acquiredTemporary = false;
                 throw err;
             });
@@ -131,22 +135,10 @@ class PooledDatabase {
     //Otherwise, call `getOrAllocateConnection()` and then call `freeConnection()` after
     getOrAllocateConnectionTemporary(callback) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (this.acquiredTemporary) {
-                const connection = yield this.getOrAllocateConnection();
+            return this.acquireIfNotTemporary((db) => __awaiter(this, void 0, void 0, function* () {
+                const connection = yield db.getOrAllocateConnection();
                 return callback(connection);
-            }
-            else {
-                const connection = yield this.getOrAllocateConnection();
-                return callback(connection)
-                    .then((result) => {
-                    this.freeConnection();
-                    return result;
-                })
-                    .catch((err) => {
-                    this.freeConnection();
-                    throw err;
-                });
-            }
+            }));
         });
     }
     rawQuery(queryStr, queryValues) {
