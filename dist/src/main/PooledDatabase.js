@@ -15,6 +15,7 @@ const pagination_1 = require("./pagination");
 const util = require("./my-util");
 const poolUtil = require("./pool-util");
 const SingletonAllocator_1 = require("./SingletonAllocator");
+const error_1 = require("./error");
 class PooledDatabase {
     constructor(args, data) {
         this.connection = new SingletonAllocator_1.SingletonAllocator({
@@ -47,11 +48,13 @@ class PooledDatabase {
             data = {
                 useUtcOnly: false,
                 paginationConfiguration: new pagination_1.PaginationConfiguration(),
+                printQueryOnRowCountError: false,
             };
         }
         this.data = {
             useUtcOnly: data.useUtcOnly,
             paginationConfiguration: Object.assign({}, data.paginationConfiguration),
+            printQueryOnRowCountError: data.printQueryOnRowCountError,
         };
     }
     getPool() {
@@ -71,6 +74,12 @@ class PooledDatabase {
             }
             yield this.connection.getOrAllocate();
         });
+    }
+    willPrintQueryOnRowCountError() {
+        return this.data.printQueryOnRowCountError;
+    }
+    setPrintQueryOnRowCountError(printQueryOnRowCountError) {
+        this.data.printQueryOnRowCountError = printQueryOnRowCountError;
     }
     escape(raw) {
         return util.escape(raw, this.isUtcOnly());
@@ -183,8 +192,17 @@ class PooledDatabase {
         return __awaiter(this, void 0, void 0, function* () {
             return this.selectAllAny(queryStr, queryValues)
                 .then(({ rows, fields }) => {
+                if (rows.length == 0) {
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(`Expected one result`, queryStr, queryValues);
+                    }
+                    throw new error_1.RowNotFoundError(`Expected one result`);
+                }
                 if (rows.length != 1) {
-                    throw new Error(`Expected one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(`Expected one result, received ${rows.length}`, queryStr, queryValues);
+                    }
+                    throw new error_1.TooManyRowsFoundError(`Expected one result, received ${rows.length}`, rows.length);
                 }
                 return {
                     row: rows[0],
@@ -198,7 +216,10 @@ class PooledDatabase {
             return this.selectAllAny(queryStr, queryValues)
                 .then(({ rows, fields }) => {
                 if (rows.length > 1) {
-                    throw new Error(`Expected zero or one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(`Expected zero or one result, received ${rows.length}`, queryStr, queryValues);
+                    }
+                    throw new error_1.TooManyRowsFoundError(`Expected zero or one result, received ${rows.length}`, rows.length);
                 }
                 if (rows.length == 0) {
                     return {
@@ -303,7 +324,10 @@ class PooledDatabase {
                     return undefined;
                 }
                 if (rows.length != 1) {
-                    throw new Error(`Expected one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(`Expected zero or one result, received ${rows.length}`, queryStr, queryValues);
+                    }
+                    throw new error_1.TooManyRowsFoundError(`Expected zero or one result, received ${rows.length}`, rows.length);
                 }
                 if (fields.length != 1) {
                     throw new Error(`Expected one field, received ${fields.length}`);

@@ -13,6 +13,7 @@ import {OrderByItem} from "./OrderByItem";
 import * as util from "./my-util";
 import * as poolUtil from "./pool-util";
 import {SingletonAllocator} from "./SingletonAllocator";
+import { RowNotFoundError, TooManyRowsFoundError } from "./error";
 
 export interface SelectResult<T> {
     rows   : T[];
@@ -85,6 +86,8 @@ export interface RawQueryResult {
 export interface PooledDatabaseData {
     useUtcOnly : boolean,
     paginationConfiguration : PaginationConfiguration,
+    //Defaults to false
+    printQueryOnRowCountError : boolean,
 }
 
 export class PooledDatabase {
@@ -104,11 +107,13 @@ export class PooledDatabase {
             data = {
                 useUtcOnly : false,
                 paginationConfiguration : new PaginationConfiguration(),
+                printQueryOnRowCountError : false,
             };
         }
         this.data = {
             useUtcOnly : data.useUtcOnly,
             paginationConfiguration : {...data.paginationConfiguration},
+            printQueryOnRowCountError : data.printQueryOnRowCountError,
         };
     }
 
@@ -129,6 +134,12 @@ export class PooledDatabase {
             this.freeConnection();
         }
         await this.connection.getOrAllocate();
+    }
+    public willPrintQueryOnRowCountError () {
+        return this.data.printQueryOnRowCountError;
+    }
+    public setPrintQueryOnRowCountError (printQueryOnRowCountError : boolean) {
+        this.data.printQueryOnRowCountError = printQueryOnRowCountError;
     }
     public escape (raw : any) {
         return util.escape(raw, this.isUtcOnly());
@@ -263,8 +274,28 @@ export class PooledDatabase {
     public async selectOneAny (queryStr : string, queryValues? : QueryValues) : Promise<SelectOneResult<any>>{
         return this.selectAllAny(queryStr, queryValues)
             .then(({rows, fields}) => {
+                if (rows.length == 0) {
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(
+                            `Expected one result`,
+                            queryStr,
+                            queryValues
+                        );
+                    }
+                    throw new RowNotFoundError(`Expected one result`);
+                }
                 if (rows.length != 1) {
-                    throw new Error(`Expected one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(
+                            `Expected one result, received ${rows.length}`,
+                            queryStr,
+                            queryValues
+                        );
+                    }
+                    throw new TooManyRowsFoundError(
+                        `Expected one result, received ${rows.length}`,
+                        rows.length
+                    );
                 }
                 return {
                     row : rows[0],
@@ -276,7 +307,17 @@ export class PooledDatabase {
         return this.selectAllAny(queryStr, queryValues)
             .then(({rows, fields}) => {
                 if (rows.length > 1) {
-                    throw new Error(`Expected zero or one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(
+                            `Expected zero or one result, received ${rows.length}`,
+                            queryStr,
+                            queryValues
+                        );
+                    }
+                    throw new TooManyRowsFoundError(
+                        `Expected zero or one result, received ${rows.length}`,
+                        rows.length
+                    );
                 }
                 if (rows.length == 0) {
                     return {
@@ -401,7 +442,17 @@ export class PooledDatabase {
                     return undefined;
                 }
                 if (rows.length != 1) {
-                    throw new Error(`Expected one result, received ${rows.length}`);
+                    if (this.data.printQueryOnRowCountError) {
+                        console.error(
+                            `Expected zero or one result, received ${rows.length}`,
+                            queryStr,
+                            queryValues
+                        );
+                    }
+                    throw new TooManyRowsFoundError(
+                        `Expected zero or one result, received ${rows.length}`,
+                        rows.length
+                    );
                 }
                 if (fields.length != 1) {
                     throw new Error(`Expected one field, received ${fields.length}`);

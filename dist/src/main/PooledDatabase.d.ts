@@ -72,6 +72,7 @@ export interface RawQueryResult {
 export interface PooledDatabaseData {
     useUtcOnly: boolean;
     paginationConfiguration: PaginationConfiguration;
+    printQueryOnRowCountError: boolean;
 }
 export declare class PooledDatabase {
     private readonly pool;
@@ -82,6 +83,8 @@ export declare class PooledDatabase {
     private readonly connection;
     isUtcOnly(): boolean;
     utcOnly(): Promise<void>;
+    willPrintQueryOnRowCountError(): boolean;
+    setPrintQueryOnRowCountError(printQueryOnRowCountError: boolean): void;
     escape(raw: any): string;
     getConnectionOrError(): mysql.PoolConnection;
     getOrAllocateConnection(): Promise<mysql.PoolConnection>;

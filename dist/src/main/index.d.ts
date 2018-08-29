@@ -1,3 +1,4 @@
+export * from "./error";
 export * from "./my-util";
 export * from "./OrderByItem";
 export * from "./pagination";

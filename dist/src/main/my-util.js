@@ -99,7 +99,6 @@ function insertUnsafeQueries(query, values) {
             }
         }
         return substring;
-        //throw new Error(`Expected a value for ${key} in query`);
     });
     if (newQuery == query) {
         return newQuery;
@@ -120,7 +119,6 @@ function createQueryFormatDelegate(useUtcOnly) {
                 return escape(values[key], useUtcOnly);
             }
             return substring;
-            //throw new Error(`Expected a value for ${key} in query`);
         });
         return newQuery;
     };

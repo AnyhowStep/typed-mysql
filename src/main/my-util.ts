@@ -96,7 +96,6 @@ export function insertUnsafeQueries (query : string, values : any) : string {
             }
         }
         return substring;
-        //throw new Error(`Expected a value for ${key} in query`);
     });
     if (newQuery == query) {
         return newQuery;
@@ -115,7 +114,6 @@ export function createQueryFormatDelegate (useUtcOnly : boolean) {
                 return escape(values[key], useUtcOnly);
             }
             return substring;
-            //throw new Error(`Expected a value for ${key} in query`);
         });
         return newQuery;
     };
