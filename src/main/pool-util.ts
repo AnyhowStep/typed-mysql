@@ -26,6 +26,16 @@ export function toPool (args : mysql.Pool|PoolArgs) : mysql.Pool {
         user     : args.user,
         password : args.password,
         timezone : coalesce(args.timezone, "local"),
+        supportBigNumbers : true,
+        /*
+            Enabling supportBigNumbers but leaving bigNumberStrings
+            disabled will return big numbers as String objects only
+            when they cannot be accurately represented with
+            [JavaScript Number objects] (http://ecma262-5.com/ELS5_HTML.htm#Section_8.5)
+            (which happens when they exceed the [-2^53, +2^53] range),
+            otherwise they will be returned as Number objects.
+        */
+        bigNumberStrings : false,
     };
     return mysql.createPool(connectionConfig);
 }
